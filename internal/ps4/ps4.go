@@ -130,7 +130,14 @@ func GetIPFromUser() string {
 		fmt.Print("Please enter the PS4's IP address: ")
 		line, _ := reader.ReadString('\n')
 		ip := strings.TrimSpace(line)
-		if ip != "" && TestForPS4(ip) {
+		if ip == "" {
+			continue
+		}
+		if net.ParseIP(ip) == nil {
+			fmt.Printf("'%s' is not a valid IP address.\n", ip)
+			continue
+		}
+		if TestForPS4(ip) {
 			return ip
 		}
 	}
