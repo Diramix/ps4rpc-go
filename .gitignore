@@ -1,5 +1,2 @@
-ps4rpdConfig.txt
-.idea/
-build/
-PS4RPD.spec
-icon.ico
+config/
+dist/

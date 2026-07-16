@@ -1,0 +1,69 @@
+version: '3'
+
+vars:
+  BINARY: ps4rpc
+  DIST: dist
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  LDFLAGS: -s -w -X main.version={{.VERSION}}
+
+tasks:
+  default:
+    deps: [fmt, vet, build]
+
+  run:
+    cmds:
+      - go run -ldflags "{{.LDFLAGS}}" .
+
+  build:
+    cmds:
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BINARY}} .
+
+  build-windows:
+    env:
+      GOOS: windows
+      GOARCH: amd64
+    cmds:
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BINARY}}.exe .
+
+  genconfig:
+    cmds:
+      - go run ./tools/genconfig
+
+  dist:
+    deps: [clean-dist]
+    vars:
+      WIN: "{{.BINARY}}-{{.VERSION}}-windows-amd64"
+      LIN: "{{.BINARY}}-{{.VERSION}}-linux-amd64"
+    cmds:
+      - mkdir -p {{.DIST}}
+      - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}}.exe .
+      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}} .
+      - go run ./tools/genconfig -o {{.DIST}}/config
+      - cd {{.DIST}} && zip -r {{.WIN}}.zip {{.BINARY}}.exe config
+      - cd {{.DIST}} && tar -czf {{.LIN}}.tar.gz {{.BINARY}} config
+
+  fmt:
+    cmds:
+      - gofmt -w .
+
+  vet:
+    cmds:
+      - go vet ./...
+
+  test:
+    cmds:
+      - go test ./...
+
+  tidy:
+    cmds:
+      - go mod tidy
+
+  clean-dist:
+    cmds:
+      - rm -rf {{.DIST}}
+
+  clean:
+    cmds:
+      - rm -f {{.BINARY}} {{.BINARY}}.exe
+      - rm -rf {{.DIST}}
