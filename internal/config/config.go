@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -15,6 +16,23 @@ var (
 	Path       = filepath.Join(Dir, "ps4rpc.conf")
 	MappedPath = filepath.Join(Dir, "mapped.json")
 )
+
+func DefaultDir() string {
+	const app = "ps4rpc-go"
+	if runtime.GOOS == "windows" {
+		if base := os.Getenv("LOCALAPPDATA"); base != "" {
+			return filepath.Join(base, app)
+		}
+	} else {
+		if base := os.Getenv("XDG_DATA_HOME"); base != "" {
+			return filepath.Join(base, app)
+		}
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, ".local", "share", app)
+		}
+	}
+	return Dir
+}
 
 // SetDir points the config package at a different directory, recomputing the
 // file paths derived from it.

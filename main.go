@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"time"
@@ -91,12 +90,7 @@ func main() {
 }
 
 func readConfig() {
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Join(filepath.Dir(exe), "config")
-		if _, err := os.Stat(filepath.Join(dir, "ps4rpc.conf")); err == nil {
-			config.SetDir(dir)
-		}
-	}
+	config.SetDir(config.DefaultDir())
 	c, existed, err := config.Load()
 	if err != nil {
 		fmt.Printf("readConfig():   error with config file: %v\n", err)
