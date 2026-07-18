@@ -3,10 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"time"
 
+	"ps4rpc/internal/cli"
 	"ps4rpc/internal/config"
 	"ps4rpc/internal/discord"
 	"ps4rpc/internal/ps4"
@@ -44,8 +47,15 @@ func resolveVersion() string {
 func main() {
 	version = resolveVersion()
 	for _, arg := range os.Args[1:] {
-		if arg == "--version" || arg == "-v" {
+		switch arg {
+		case "--version", "-v":
 			fmt.Println(version)
+			return
+		case "--help", "-h":
+			cli.PrintHelp(os.Stdout, version)
+			return
+		case "--config", "-c":
+			openConfigDir()
 			return
 		}
 	}
@@ -86,6 +96,28 @@ func main() {
 		}
 		fmt.Println()
 		time.Sleep(time.Duration(cfg.Var.WaitTime) * time.Second)
+	}
+}
+
+func openConfigDir() {
+	dir := config.DefaultDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Printf("openConfigDir(): %v\n", err)
+		return
+	}
+	fmt.Println(dir)
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("explorer", dir)
+	case "darwin":
+		cmd = exec.Command("open", dir)
+	default:
+		cmd = exec.Command("xdg-open", dir)
+	}
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("openConfigDir(): %v\n", err)
 	}
 }
 
