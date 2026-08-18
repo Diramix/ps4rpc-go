@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -60,5 +61,59 @@ var {
 	}
 	if cfg2.Var != cfg.Var || cfg2.Mapped[0] != cfg.Mapped[0] {
 		t.Fatalf("round-trip mismatch:\n%+v\n%+v", cfg, cfg2)
+	}
+}
+
+func TestAutoMigrate(t *testing.T) {
+	dir := t.TempDir()
+	SetDir(dir)
+
+	// An old file: no `bot` block, plus an obsolete key that must be dropped.
+	old := `var {
+    ip = 10.0.0.5
+    wait_time = 42
+    obsolete_key = something
+}
+`
+	if err := os.WriteFile(Path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, existed, err := Load()
+	if err != nil || !existed {
+		t.Fatalf("load: existed=%v err=%v", existed, err)
+	}
+	if cfg.Var.IP != "10.0.0.5" || cfg.Var.WaitTime != 42 {
+		t.Fatalf("user values not preserved: %+v", cfg.Var)
+	}
+
+	data, err := os.ReadFile(Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	// New schema keys were added with defaults...
+	for _, key := range []string{"bot {", "owner_id =", "avatar_url =", "account_id ="} {
+		if !strings.Contains(got, key) {
+			t.Errorf("migrated file missing %q\n%s", key, got)
+		}
+	}
+	// ...the obsolete key was removed...
+	if strings.Contains(got, "obsolete_key") {
+		t.Errorf("obsolete key not removed\n%s", got)
+	}
+	// ...and user values survived.
+	if !strings.Contains(got, "ip = 10.0.0.5") || !strings.Contains(got, "wait_time = 42") {
+		t.Errorf("user values lost in migration\n%s", got)
+	}
+
+	// A second load must be a no-op (file already canonical): mtime unchanged.
+	before, _ := os.Stat(Path)
+	if _, _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.Stat(Path)
+	if !before.ModTime().Equal(after.ModTime()) {
+		t.Errorf("canonical file was rewritten on second load")
 	}
 }

@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -34,8 +35,6 @@ func DefaultDir() string {
 	return Dir
 }
 
-// SetDir points the config package at a different directory, recomputing the
-// file paths derived from it.
 func SetDir(dir string) {
 	Dir = dir
 	Path = filepath.Join(Dir, "ps4rpc.conf")
@@ -59,6 +58,14 @@ type DevApp struct {
 	TitleID string
 }
 
+type Bot struct {
+	Token     string
+	OwnerID   string
+	GuildID   string
+	AccountID string
+	AvatarURL string
+}
+
 type Mapped struct {
 	TitleID string `json:"titleid"`
 	Name    string `json:"name"`
@@ -67,6 +74,7 @@ type Mapped struct {
 
 type Config struct {
 	Var     Var
+	Bot     Bot
 	Devapps []DevApp
 	Mapped  []Mapped
 }
@@ -85,21 +93,20 @@ func Default() *Config {
 }
 
 func Load() (*Config, bool, error) {
-	f, err := os.Open(Path)
+	raw, err := os.ReadFile(Path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return Default(), false, nil
 		}
 		return Default(), false, err
 	}
-	defer f.Close()
 
 	cfg := Default()
 	cfg.Devapps = nil
 
 	var block string
 	var kv map[string]string
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(bytes.NewReader(raw))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -131,6 +138,10 @@ func Load() (*Config, bool, error) {
 	if err := cfg.loadMapped(); err != nil {
 		return cfg, true, err
 	}
+
+	if want := cfg.renderConf(); want != string(raw) {
+		_ = os.WriteFile(Path, []byte(want), 0o644)
+	}
 	return cfg, true, nil
 }
 
@@ -161,12 +172,19 @@ func (c *Config) apply(block string, kv map[string]string) {
 		v.UseDevapps = atob(kv["use_devapps"], v.UseDevapps)
 		v.ShowTimer = atob(kv["show_timer"], v.ShowTimer)
 		v.UseAppname = atob(kv["use_appname"], v.UseAppname)
+	case "bot":
+		b := &c.Bot
+		b.Token = kv["token"]
+		b.OwnerID = kv["owner_id"]
+		b.GuildID = kv["guild_id"]
+		b.AccountID = kv["account_id"]
+		b.AvatarURL = kv["avatar_url"]
 	case "devapp":
 		c.Devapps = append(c.Devapps, DevApp{DevID: kv["devid"], TitleID: kv["titleid"]})
 	}
 }
 
-func (c *Config) Save() error {
+func (c *Config) renderConf() string {
 	var b strings.Builder
 	b.WriteString("var {\n")
 	fmt.Fprintf(&b, "    ip = %s\n", c.Var.IP)
@@ -180,17 +198,28 @@ func (c *Config) Save() error {
 	fmt.Fprintf(&b, "    use_appname = %t\n", c.Var.UseAppname)
 	b.WriteString("}\n")
 
+	b.WriteString("\nbot {\n")
+	fmt.Fprintf(&b, "    token = %s\n", c.Bot.Token)
+	fmt.Fprintf(&b, "    owner_id = %s\n", c.Bot.OwnerID)
+	fmt.Fprintf(&b, "    guild_id = %s\n", c.Bot.GuildID)
+	fmt.Fprintf(&b, "    account_id = %s\n", c.Bot.AccountID)
+	fmt.Fprintf(&b, "    avatar_url = %s\n", c.Bot.AvatarURL)
+	b.WriteString("}\n")
+
 	for _, d := range c.Devapps {
 		b.WriteString("\ndevapp {\n")
 		fmt.Fprintf(&b, "    devid = %s\n", d.DevID)
 		fmt.Fprintf(&b, "    titleid = %s\n", d.TitleID)
 		b.WriteString("}\n")
 	}
+	return b.String()
+}
 
+func (c *Config) Save() error {
 	if err := os.MkdirAll(Dir, 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(Path, []byte(b.String()), 0o644); err != nil {
+	if err := os.WriteFile(Path, []byte(c.renderConf()), 0o644); err != nil {
 		return err
 	}
 	return c.saveMapped()

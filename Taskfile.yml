@@ -19,6 +19,14 @@ tasks:
     cmds:
       - go build -ldflags "{{.LDFLAGS}}" -o {{.BINARY}} .
 
+  build-bot:
+    cmds:
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BINARY}}bot ./cmd/ps4bot
+
+  run-bot:
+    cmds:
+      - go run -ldflags "{{.LDFLAGS}}" ./cmd/ps4bot
+
   build-windows:
     env:
       GOOS: windows
@@ -39,9 +47,11 @@ tasks:
       - mkdir -p {{.DIST}}
       - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}}.exe .
       - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}} .
+      - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}}bot.exe ./cmd/ps4bot
+      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}}bot ./cmd/ps4bot
       - go run ./tools/genconfig -o {{.DIST}}/config
-      - cd {{.DIST}} && zip -r {{.WIN}}.zip {{.BINARY}}.exe config
-      - cd {{.DIST}} && tar -czf {{.LIN}}.tar.gz {{.BINARY}} config
+      - cd {{.DIST}} && zip -r {{.WIN}}.zip {{.BINARY}}.exe {{.BINARY}}bot.exe config
+      - cd {{.DIST}} && tar -czf {{.LIN}}.tar.gz {{.BINARY}} {{.BINARY}}bot config
 
   fmt:
     cmds:
@@ -65,5 +75,5 @@ tasks:
 
   clean:
     cmds:
-      - rm -f {{.BINARY}} {{.BINARY}}.exe
+      - rm -f {{.BINARY}} {{.BINARY}}.exe {{.BINARY}}bot {{.BINARY}}bot.exe
       - rm -rf {{.DIST}}

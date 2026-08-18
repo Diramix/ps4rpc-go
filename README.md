@@ -14,6 +14,5 @@ The program stores its config files in a per-user data directory:
 - **Windows:** `%LOCALAPPDATA%\ps4rpc-go`
 - **Linux:** `~/.local/share/ps4rpc-go`
 
----
 
 > Special thanks to [zorua98741](https://github.com/zorua98741/PS4-Rich-Presence-for-Discord) for the original project
