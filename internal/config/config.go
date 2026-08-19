@@ -50,7 +50,7 @@ func SetDir(dir string) {
 	MappedPath = filepath.Join(Dir, "mapped.lua")
 }
 
-type Var struct {
+type Core struct {
 	IP       string
 	ClientID int64
 	WaitTime int
@@ -77,7 +77,7 @@ type Mapped struct {
 }
 
 type Config struct {
-	Var     Var
+	Core    Core
 	Bot     Bot
 	Devapps []DevApp
 	Mapped  []Mapped
@@ -85,7 +85,7 @@ type Config struct {
 
 func Default() *Config {
 	return &Config{
-		Var: Var{
+		Core: Core{
 			ClientID: 858345055966461973,
 			WaitTime: 30,
 			Enabled:  true,
@@ -118,7 +118,7 @@ func Load() (*Config, bool, error) {
 
 	cfg := Default()
 	cfg.Devapps = nil
-	cfg.applyVar(tableField(root, "var"))
+	cfg.applyCore(coreTable(root))
 	cfg.applyRpc(tableField(root, "rpc"))
 	cfg.applyBot(tableField(root, "bot"))
 	cfg.applyDev(tableField(root, "dev"))
@@ -151,11 +151,18 @@ func tableField(t *lua.LTable, name string) *lua.LTable {
 	return nil
 }
 
-func (c *Config) applyVar(t *lua.LTable) {
+func coreTable(root *lua.LTable) *lua.LTable {
+	if t := tableField(root, "core"); t != nil {
+		return t
+	}
+	return tableField(root, "var")
+}
+
+func (c *Config) applyCore(t *lua.LTable) {
 	if t == nil {
 		return
 	}
-	v := &c.Var
+	v := &c.Core
 	v.IP = luaStr(t, "ip", v.IP)
 }
 
@@ -163,7 +170,7 @@ func (c *Config) applyRpc(t *lua.LTable) {
 	if t == nil {
 		return
 	}
-	v := &c.Var
+	v := &c.Core
 	v.ClientID = luaInt64(t, "client_id", v.ClientID)
 	v.WaitTime = luaInt(t, "wait_time", v.WaitTime)
 	v.Enabled = luaBool(t, "enabled", v.Enabled)
@@ -240,8 +247,8 @@ func (c *Config) files() map[string]string {
 func (c *Config) renderMain() string {
 	var b strings.Builder
 	b.WriteString("return {\n")
-	b.WriteString("    var = {\n")
-	fmt.Fprintf(&b, "        ip = %s,\n", luaString(c.Var.IP))
+	b.WriteString("    core = {\n")
+	fmt.Fprintf(&b, "        ip = %s,\n", luaString(c.Core.IP))
 	b.WriteString("    },\n")
 	b.WriteString("    rpc = require(\"rpc\"),\n")
 	b.WriteString("    bot = require(\"bot\"),\n")
@@ -254,9 +261,9 @@ func (c *Config) renderMain() string {
 func (c *Config) renderRpc() string {
 	var b strings.Builder
 	b.WriteString("return {\n")
-	fmt.Fprintf(&b, "    client_id = %q,\n", strconv.FormatInt(c.Var.ClientID, 10))
-	fmt.Fprintf(&b, "    wait_time = %d,\n", c.Var.WaitTime)
-	fmt.Fprintf(&b, "    enabled = %t,\n", c.Var.Enabled)
+	fmt.Fprintf(&b, "    client_id = %q,\n", strconv.FormatInt(c.Core.ClientID, 10))
+	fmt.Fprintf(&b, "    wait_time = %d,\n", c.Core.WaitTime)
+	fmt.Fprintf(&b, "    enabled = %t,\n", c.Core.Enabled)
 	b.WriteString("}\n")
 	return b.String()
 }
@@ -364,7 +371,7 @@ func (c *Config) Clone() *Config {
 }
 
 func (c *Config) Equal(o *Config) bool {
-	if o == nil || c.Var != o.Var || c.Bot != o.Bot ||
+	if o == nil || c.Core != o.Core || c.Bot != o.Bot ||
 		len(c.Devapps) != len(o.Devapps) || len(c.Mapped) != len(o.Mapped) {
 		return false
 	}
