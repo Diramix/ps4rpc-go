@@ -28,15 +28,10 @@ tasks:
 
   dist:
     deps: [clean-dist]
-    vars:
-      WIN: "{{.BINARY}}-{{.VERSION}}-windows-amd64"
-      LIN: "{{.BINARY}}-{{.VERSION}}-linux-amd64"
     cmds:
       - mkdir -p {{.DIST}}
-      - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}}.exe .
-      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}} .
-      - cd {{.DIST}} && zip -r {{.WIN}}.zip {{.BINARY}}.exe
-      - cd {{.DIST}} && tar -czf {{.LIN}}.tar.gz {{.BINARY}}
+      - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}}-windows-amd64.exe .
+      - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}}-linux-amd64 .
 
   fmt:
     cmds:

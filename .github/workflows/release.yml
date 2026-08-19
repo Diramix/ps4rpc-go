@@ -62,12 +62,11 @@ jobs:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build distribution archives
+      - name: Build distribution binaries
         run: task dist
 
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/*.zip
-            dist/*.tar.gz
+            dist/*
