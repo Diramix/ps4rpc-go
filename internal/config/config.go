@@ -51,10 +51,11 @@ func SetDir(dir string) {
 }
 
 type Core struct {
-	IP       string
-	ClientID int64
-	WaitTime int
-	Enabled  bool
+	IP        string
+	ClientID  int64
+	WaitTime  int
+	Enabled   bool
+	Autostart bool
 }
 
 type DevApp struct {
@@ -153,6 +154,7 @@ func (c *Config) applyCore(t *lua.LTable) {
 	}
 	v := &c.Core
 	v.IP = luaStr(t, "ip", v.IP)
+	v.Autostart = luaBool(t, "autostart", v.Autostart)
 }
 
 func (c *Config) applyRpc(t *lua.LTable) {
@@ -238,6 +240,7 @@ func (c *Config) renderMain() string {
 	b.WriteString("return {\n")
 	b.WriteString("    core = {\n")
 	fmt.Fprintf(&b, "        ip = %s,\n", luaString(c.Core.IP))
+	fmt.Fprintf(&b, "        autostart = %t,\n", c.Core.Autostart)
 	b.WriteString("    },\n")
 	b.WriteString("    rpc = require(\"rpc\"),\n")
 	b.WriteString("    bot = require(\"bot\"),\n")

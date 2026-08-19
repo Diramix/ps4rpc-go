@@ -212,3 +212,41 @@ func TestLegacyVarSectionIsMigratedToCore(t *testing.T) {
 		t.Fatalf("main.lua was not migrated:\n%s", raw)
 	}
 }
+
+func TestAutostartDefaultsToOnAndRoundTrips(t *testing.T) {
+	dir := t.TempDir()
+	SetDir(dir)
+
+	if err := os.WriteFile(Path, []byte(`return {
+    core = { ip = "10.0.0.2" },
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Core.Autostart {
+		t.Fatal("a config without the key must autostart")
+	}
+
+	cfg.Core.Autostart = false
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := os.ReadFile(Path); err != nil {
+		t.Fatal(err)
+	} else if !strings.Contains(string(raw), "autostart = false") {
+		t.Fatalf("main.lua does not carry the setting:\n%s", raw)
+	}
+
+	back, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Core.Autostart {
+		t.Fatal("autostart came back on after a reload")
+	}
+}

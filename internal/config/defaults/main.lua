@@ -1,6 +1,7 @@
 return {
     core = {
         ip = "",
+        autostart = true,
     },
     rpc = require("rpc"),
     bot = require("bot"),

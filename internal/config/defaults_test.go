@@ -14,8 +14,8 @@ func TestDefaultsParse(t *testing.T) {
 	if cfg.Core.ClientID == 0 || cfg.Core.WaitTime <= 0 {
 		t.Fatalf("defaults/rpc.lua did not reach the config: %+v", cfg.Core)
 	}
-	if !cfg.Core.Enabled {
-		t.Fatalf("presence should ship enabled: %+v", cfg.Core)
+	if !cfg.Core.Enabled || !cfg.Core.Autostart {
+		t.Fatalf("presence and autostart should ship enabled: %+v", cfg.Core)
 	}
 	if cfg.Bot.Enabled || cfg.Bot.Token != "" {
 		t.Fatalf("the bot should ship off: %+v", cfg.Bot)

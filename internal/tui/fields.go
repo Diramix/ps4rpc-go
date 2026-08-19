@@ -45,6 +45,15 @@ func settingsFields() []field {
 			},
 		},
 
+		{kind: fieldSection, label: "Startup"},
+		{
+			kind:    fieldToggle,
+			label:   "Autostart",
+			help:    "Start the enabled services at login",
+			getBool: func(c *config.Config) bool { return c.Core.Autostart },
+			toggle:  func(c *config.Config) { c.Core.Autostart = !c.Core.Autostart },
+		},
+
 		{kind: fieldSection, label: "Rich Presence"},
 		{
 			kind:    fieldToggle,
