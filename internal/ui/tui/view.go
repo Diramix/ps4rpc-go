@@ -286,7 +286,7 @@ func (m *Model) viewMappings() string {
 	}
 	rows = window(rows, m.rowMapped, m.bodyHeight()-1)
 
-	body := stylePanelTitle.Render("Mapped games") + "\n" + strings.Join(rows, "\n")
+	body := stylePanelTitle.Render("▍Mapped games") + "\n" + strings.Join(rows, "\n")
 	return stylePanel.Width(m.contentWidth() - 2).Render(body)
 }
 
