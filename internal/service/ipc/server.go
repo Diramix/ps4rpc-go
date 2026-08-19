@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"log"
 	"net"
 	"sync"
 )
@@ -28,9 +29,10 @@ func (sc *serverConn) send(f frame) error {
 	if err != nil {
 		return err
 	}
+	b = append(b, '\n')
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
-	_, err = sc.c.Write(append(b, '\n'))
+	_, err = sc.c.Write(b)
 	return err
 }
 
@@ -64,6 +66,7 @@ func (s *Server) handle(sc *serverConn) {
 	for sr.Scan() {
 		var req request
 		if err := json.Unmarshal(sr.Bytes(), &req); err != nil {
+			log.Printf("ipc: %s: malformed frame: %v", s.name, err)
 			continue
 		}
 		if req.Method == MethodSubscribe {

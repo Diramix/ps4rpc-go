@@ -3,6 +3,7 @@ package cache
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -110,8 +111,45 @@ func TestNilStoreIsInert(t *testing.T) {
 	}
 }
 
+func TestOpenPrunesOrphanedIndexEntries(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put("/some/key", []byte("data")); err != nil {
+		t.Fatal(err)
+	}
+	files, ok := s.index["/some/key"]
+	if !ok {
+		t.Fatal("missing index entry after Put")
+	}
+	if err := os.Remove(filepath.Join(dir, blobDir, files.File)); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := reopened.Get("/some/key"); ok {
+		t.Error("Get returned data for an orphaned entry")
+	}
+	if _, ok := reopened.index["/some/key"]; ok {
+		t.Error("orphaned entry not pruned from index")
+	}
+}
+
 func TestBlobNameIsReadable(t *testing.T) {
-	if got := blobName("/user/appmeta/CUSA00512/icon0.png"); got != "user_appmeta_CUSA00512_icon0.png" {
+	if got := blobName("/user/appmeta/CUSA00512/icon0.png"); !strings.HasPrefix(got, "user_appmeta_CUSA00512_icon0.png-") {
 		t.Errorf("blobName = %q", got)
+	}
+}
+
+func TestBlobNameAvoidsCollisions(t *testing.T) {
+	a := blobName("/a/b")
+	b := blobName("/a_b")
+	if a == b {
+		t.Errorf("blobName collision: %q == %q", a, b)
 	}
 }

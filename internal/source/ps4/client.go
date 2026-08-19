@@ -25,6 +25,14 @@ type Client struct {
 	mu           sync.Mutex
 	cache        map[string]cachedFile
 	offlineUntil time.Time
+	inflight     map[string]*fetchCall
+}
+
+type fetchCall struct {
+	done chan struct{}
+	data []byte
+	meta Meta
+	err  error
 }
 
 const offlineBackoff = 30 * time.Second
@@ -66,6 +74,7 @@ func New(ip string) *Client {
 		dialTimeout: 6 * time.Second,
 		cacheTTL:    2 * time.Minute,
 		cache:       map[string]cachedFile{},
+		inflight:    map[string]*fetchCall{},
 	}
 }
 
@@ -159,8 +168,26 @@ func (c *Client) fetch(remote string, cacheFirst bool) ([]byte, Meta, error) {
 		c.mu.Unlock()
 		return cf.data, cf.meta, nil
 	}
+	if call, ok := c.inflight[remote]; ok {
+		c.mu.Unlock()
+		<-call.done
+		return call.data, call.meta, call.err
+	}
+	call := &fetchCall{done: make(chan struct{})}
+	c.inflight[remote] = call
 	c.mu.Unlock()
 
+	call.data, call.meta, call.err = c.doFetch(remote, cacheFirst)
+
+	c.mu.Lock()
+	delete(c.inflight, remote)
+	c.mu.Unlock()
+	close(call.done)
+
+	return call.data, call.meta, call.err
+}
+
+func (c *Client) doFetch(remote string, cacheFirst bool) ([]byte, Meta, error) {
 	if cacheFirst || c.unreachable() {
 		if data, fetched, ok := c.store.Get(remote); ok {
 			return data, Meta{Fetched: fetched}, nil

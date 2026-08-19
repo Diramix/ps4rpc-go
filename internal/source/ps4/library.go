@@ -85,11 +85,26 @@ FROM tbl_appinfo GROUP BY titleId`
 		return nil, err
 	}
 
-	sort.Slice(games, func(i, j int) bool {
-		return strings.ToLower(games[i].Name) < strings.ToLower(games[j].Name)
-	})
+	sortByName(games)
 	return games, nil
 }
+
+func sortByName(games []Game) {
+	keys := make([]string, len(games))
+	for i, g := range games {
+		keys[i] = strings.ToLower(g.Name)
+	}
+	sort.Sort(&byNameKey{games: games, keys: keys})
+}
+
+type byNameKey struct {
+	games []Game
+	keys  []string
+}
+
+func (b *byNameKey) Len() int      { return len(b.games) }
+func (b *byNameKey) Swap(i, j int) { b.games[i], b.games[j] = b.games[j], b.games[i]; b.keys[i], b.keys[j] = b.keys[j], b.keys[i] }
+func (b *byNameKey) Less(i, j int) bool { return b.keys[i] < b.keys[j] }
 
 func (c *Client) Games() ([]Game, Meta, error) {
 	return games(c.Library())

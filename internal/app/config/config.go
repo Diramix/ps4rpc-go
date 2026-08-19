@@ -240,13 +240,32 @@ func (c *Config) migrate() error {
 	for path, want := range c.files() {
 		raw, err := os.ReadFile(path)
 		if err != nil || string(raw) != want {
-			if err := os.WriteFile(path, []byte(want), 0o644); err != nil {
+			if err := writeFileAtomic(path, []byte(want)); err != nil {
 				return err
 			}
 		}
 	}
 	_ = os.Remove(filepath.Join(Dir, "var.lua"))
 	return nil
+}
+
+func writeFileAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 func (c *Config) files() map[string]string {
@@ -333,7 +352,7 @@ func (c *Config) Save() error {
 		return err
 	}
 	for path, want := range c.files() {
-		if err := os.WriteFile(path, []byte(want), 0o644); err != nil {
+		if err := writeFileAtomic(path, []byte(want)); err != nil {
 			return err
 		}
 	}
@@ -345,7 +364,7 @@ func (c *Config) AppendMapped(m Mapped) error {
 	if err := os.MkdirAll(Dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(MappedPath, []byte(c.renderMapped()), 0o644)
+	return writeFileAtomic(MappedPath, []byte(c.renderMapped()))
 }
 
 func luaString(s string) string {

@@ -1,6 +1,8 @@
 package cache
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -39,7 +41,25 @@ func Open(dir string) (*Store, error) {
 			s.index = idx
 		}
 	}
+	s.pruneOrphans()
 	return s, nil
+}
+
+// pruneOrphans drops index entries whose blob file is missing, which can
+// happen if the process crashed between writing the blob and the index.
+func (s *Store) pruneOrphans() {
+	var dirty bool
+	for key, e := range s.index {
+		if _, err := os.Stat(filepath.Join(s.dir, blobDir, e.File)); err != nil {
+			delete(s.index, key)
+			dirty = true
+		}
+	}
+	if dirty {
+		if raw, err := json.MarshalIndent(s.index, "", "  "); err == nil {
+			_ = writeFileAtomic(filepath.Join(s.dir, indexName), raw)
+		}
+	}
 }
 
 func (s *Store) Dir() string { return s.dir }
@@ -148,10 +168,12 @@ func blobName(key string) string {
 		}
 		return '_'
 	}, name)
+	sum := sha256.Sum256([]byte(key))
+	suffix := hex.EncodeToString(sum[:])[:8]
 	if name == "" {
-		return "blob"
+		return suffix
 	}
-	return name
+	return name + "-" + suffix
 }
 
 func writeFileAtomic(path string, data []byte) error {

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -143,6 +144,7 @@ func stopRole(role string) error {
 func Notify(role, method string) error {
 	c, err := ipc.Dial(role)
 	if err != nil {
+		log.Printf("daemon: %s: notify %s: dial: %v", role, method, err)
 		return nil
 	}
 	defer c.Close()
