@@ -1,24 +1,26 @@
 package config
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+
+	lua "github.com/yuin/gopher-lua"
 )
 
 var (
 	Dir        = "config"
-	Path       = filepath.Join(Dir, "ps4rpc.conf")
-	MappedPath = filepath.Join(Dir, "mapped.json")
+	Path       = filepath.Join(Dir, "main.lua")
+	RpcPath    = filepath.Join(Dir, "rpc.lua")
+	BotPath    = filepath.Join(Dir, "bot.lua")
+	DevPath    = filepath.Join(Dir, "dev.lua")
+	MappedPath = filepath.Join(Dir, "mapped.lua")
 )
 
-func DefaultDir() string {
+func DataDir() string {
 	const app = "ps4rpc-go"
 	if runtime.GOOS == "windows" {
 		if base := os.Getenv("LOCALAPPDATA"); base != "" {
@@ -32,25 +34,26 @@ func DefaultDir() string {
 			return filepath.Join(home, ".local", "share", app)
 		}
 	}
-	return Dir
+	return "."
+}
+
+func DefaultDir() string {
+	return filepath.Join(DataDir(), "config")
 }
 
 func SetDir(dir string) {
 	Dir = dir
-	Path = filepath.Join(Dir, "ps4rpc.conf")
-	MappedPath = filepath.Join(Dir, "mapped.json")
+	Path = filepath.Join(Dir, "main.lua")
+	RpcPath = filepath.Join(Dir, "rpc.lua")
+	BotPath = filepath.Join(Dir, "bot.lua")
+	DevPath = filepath.Join(Dir, "dev.lua")
+	MappedPath = filepath.Join(Dir, "mapped.lua")
 }
 
 type Var struct {
-	IP            string
-	ClientID      int64
-	WaitTime      int
-	RetroCovers   bool
-	Hibernate     bool
-	HibernateTime int
-	UseDevapps    bool
-	ShowTimer     bool
-	UseAppname    bool
+	IP       string
+	ClientID int64
+	WaitTime int
 }
 
 type DevApp struct {
@@ -63,7 +66,6 @@ type Bot struct {
 	OwnerID   string
 	GuildID   string
 	AccountID string
-	AvatarURL string
 }
 
 type Mapped struct {
@@ -82,10 +84,8 @@ type Config struct {
 func Default() *Config {
 	return &Config{
 		Var: Var{
-			ClientID:      858345055966461973,
-			WaitTime:      30,
-			RetroCovers:   true,
-			HibernateTime: 600,
+			ClientID: 858345055966461973,
+			WaitTime: 30,
 		},
 		Devapps: []DevApp{{}},
 		Mapped:  []Mapped{},
@@ -93,125 +93,197 @@ func Default() *Config {
 }
 
 func Load() (*Config, bool, error) {
-	raw, err := os.ReadFile(Path)
-	if err != nil {
+	if _, err := os.Stat(Path); err != nil {
 		if os.IsNotExist(err) {
 			return Default(), false, nil
 		}
 		return Default(), false, err
 	}
 
+	L := lua.NewState()
+	defer L.Close()
+	setLuaPath(L)
+
+	if err := L.DoFile(Path); err != nil {
+		return Default(), true, err
+	}
+	ret := L.Get(-1)
+	root, ok := ret.(*lua.LTable)
+	if !ok {
+		return Default(), true, fmt.Errorf("config: %s must return a table", Path)
+	}
+
 	cfg := Default()
 	cfg.Devapps = nil
+	cfg.applyVar(tableField(root, "var"))
+	cfg.applyRpc(tableField(root, "rpc"))
+	cfg.applyBot(tableField(root, "bot"))
+	cfg.applyDev(tableField(root, "dev"))
+	cfg.applyMapped(tableField(root, "mapped"))
 
-	var block string
-	var kv map[string]string
-	scanner := bufio.NewScanner(bytes.NewReader(raw))
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.HasSuffix(line, "{") {
-			block = strings.TrimSpace(strings.TrimSuffix(line, "{"))
-			kv = map[string]string{}
-			continue
-		}
-		if line == "}" {
-			cfg.apply(block, kv)
-			block, kv = "", nil
-			continue
-		}
-		if kv != nil {
-			if k, v, ok := strings.Cut(line, "="); ok {
-				kv[strings.TrimSpace(k)] = strings.TrimSpace(v)
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return cfg, true, err
-	}
 	if cfg.Devapps == nil {
 		cfg.Devapps = []DevApp{{}}
 	}
-	if err := cfg.loadMapped(); err != nil {
-		return cfg, true, err
-	}
 
-	if want := cfg.renderConf(); want != string(raw) {
-		_ = os.WriteFile(Path, []byte(want), 0o644)
+	if err := cfg.migrate(); err != nil {
+		return cfg, true, err
 	}
 	return cfg, true, nil
 }
 
-func (c *Config) loadMapped() error {
-	data, err := os.ReadFile(MappedPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	if len(data) == 0 {
+func setLuaPath(L *lua.LState) {
+	pkg := L.GetGlobal("package").(*lua.LTable)
+	pattern := filepath.Join(Dir, "?.lua")
+	cur := lua.LVAsString(pkg.RawGetString("path"))
+	pkg.RawSetString("path", lua.LString(pattern+";"+cur))
+}
+
+func tableField(t *lua.LTable, name string) *lua.LTable {
+	if t == nil {
 		return nil
 	}
-	return json.Unmarshal(data, &c.Mapped)
+	if v, ok := t.RawGetString(name).(*lua.LTable); ok {
+		return v
+	}
+	return nil
 }
 
-func (c *Config) apply(block string, kv map[string]string) {
-	switch block {
-	case "var":
-		v := &c.Var
-		v.IP = kv["ip"]
-		v.ClientID = atoi64(kv["client_id"], v.ClientID)
-		v.WaitTime = atoi(kv["wait_time"], v.WaitTime)
-		v.RetroCovers = atob(kv["retro_covers"], v.RetroCovers)
-		v.Hibernate = atob(kv["hibernate"], v.Hibernate)
-		v.HibernateTime = atoi(kv["hibernate_time"], v.HibernateTime)
-		v.UseDevapps = atob(kv["use_devapps"], v.UseDevapps)
-		v.ShowTimer = atob(kv["show_timer"], v.ShowTimer)
-		v.UseAppname = atob(kv["use_appname"], v.UseAppname)
-	case "bot":
-		b := &c.Bot
-		b.Token = kv["token"]
-		b.OwnerID = kv["owner_id"]
-		b.GuildID = kv["guild_id"]
-		b.AccountID = kv["account_id"]
-		b.AvatarURL = kv["avatar_url"]
-	case "devapp":
-		c.Devapps = append(c.Devapps, DevApp{DevID: kv["devid"], TitleID: kv["titleid"]})
+func (c *Config) applyVar(t *lua.LTable) {
+	if t == nil {
+		return
+	}
+	v := &c.Var
+	v.IP = luaStr(t, "ip", v.IP)
+}
+
+func (c *Config) applyRpc(t *lua.LTable) {
+	if t == nil {
+		return
+	}
+	v := &c.Var
+	v.ClientID = luaInt64(t, "client_id", v.ClientID)
+	v.WaitTime = luaInt(t, "wait_time", v.WaitTime)
+}
+
+func (c *Config) applyBot(t *lua.LTable) {
+	if t == nil {
+		return
+	}
+	b := &c.Bot
+	b.Token = luaStr(t, "token", b.Token)
+	b.OwnerID = luaStr(t, "owner_id", b.OwnerID)
+	b.GuildID = luaStr(t, "guild_id", b.GuildID)
+	b.AccountID = luaStr(t, "account_id", b.AccountID)
+}
+
+func (c *Config) applyDev(t *lua.LTable) {
+	if t == nil {
+		return
+	}
+	t.ForEach(func(_, v lua.LValue) {
+		row, ok := v.(*lua.LTable)
+		if !ok {
+			return
+		}
+		c.Devapps = append(c.Devapps, DevApp{
+			DevID:   luaStr(row, "devid", ""),
+			TitleID: luaStr(row, "titleid", ""),
+		})
+	})
+}
+
+func (c *Config) applyMapped(t *lua.LTable) {
+	if t == nil {
+		return
+	}
+	t.ForEach(func(_, v lua.LValue) {
+		row, ok := v.(*lua.LTable)
+		if !ok {
+			return
+		}
+		c.Mapped = append(c.Mapped, Mapped{
+			TitleID: luaStr(row, "titleid", ""),
+			Name:    luaStr(row, "name", ""),
+			Image:   luaStr(row, "image", ""),
+		})
+	})
+}
+
+func (c *Config) migrate() error {
+	for path, want := range c.files() {
+		raw, err := os.ReadFile(path)
+		if err != nil || string(raw) != want {
+			if err := os.WriteFile(path, []byte(want), 0o644); err != nil {
+				return err
+			}
+		}
+	}
+	_ = os.Remove(filepath.Join(Dir, "var.lua"))
+	return nil
+}
+
+func (c *Config) files() map[string]string {
+	return map[string]string{
+		Path:       c.renderMain(),
+		RpcPath:    c.renderRpc(),
+		BotPath:    c.renderBot(),
+		DevPath:    c.renderDev(),
+		MappedPath: c.renderMapped(),
 	}
 }
 
-func (c *Config) renderConf() string {
+func (c *Config) renderMain() string {
 	var b strings.Builder
-	b.WriteString("var {\n")
-	fmt.Fprintf(&b, "    ip = %s\n", c.Var.IP)
-	fmt.Fprintf(&b, "    client_id = %d\n", c.Var.ClientID)
-	fmt.Fprintf(&b, "    wait_time = %d\n", c.Var.WaitTime)
-	fmt.Fprintf(&b, "    retro_covers = %t\n", c.Var.RetroCovers)
-	fmt.Fprintf(&b, "    hibernate = %t\n", c.Var.Hibernate)
-	fmt.Fprintf(&b, "    hibernate_time = %d\n", c.Var.HibernateTime)
-	fmt.Fprintf(&b, "    use_devapps = %t\n", c.Var.UseDevapps)
-	fmt.Fprintf(&b, "    show_timer = %t\n", c.Var.ShowTimer)
-	fmt.Fprintf(&b, "    use_appname = %t\n", c.Var.UseAppname)
+	b.WriteString("return {\n")
+	b.WriteString("    var = {\n")
+	fmt.Fprintf(&b, "        ip = %s,\n", luaString(c.Var.IP))
+	b.WriteString("    },\n")
+	b.WriteString("    rpc = require(\"rpc\"),\n")
+	b.WriteString("    bot = require(\"bot\"),\n")
+	b.WriteString("    dev = require(\"dev\"),\n")
+	b.WriteString("    mapped = require(\"mapped\"),\n")
 	b.WriteString("}\n")
+	return b.String()
+}
 
-	b.WriteString("\nbot {\n")
-	fmt.Fprintf(&b, "    token = %s\n", c.Bot.Token)
-	fmt.Fprintf(&b, "    owner_id = %s\n", c.Bot.OwnerID)
-	fmt.Fprintf(&b, "    guild_id = %s\n", c.Bot.GuildID)
-	fmt.Fprintf(&b, "    account_id = %s\n", c.Bot.AccountID)
-	fmt.Fprintf(&b, "    avatar_url = %s\n", c.Bot.AvatarURL)
+func (c *Config) renderRpc() string {
+	var b strings.Builder
+	b.WriteString("return {\n")
+	fmt.Fprintf(&b, "    client_id = %q,\n", strconv.FormatInt(c.Var.ClientID, 10))
+	fmt.Fprintf(&b, "    wait_time = %d,\n", c.Var.WaitTime)
 	b.WriteString("}\n")
+	return b.String()
+}
 
+func (c *Config) renderBot() string {
+	var b strings.Builder
+	b.WriteString("return {\n")
+	fmt.Fprintf(&b, "    token = %s,\n", luaString(c.Bot.Token))
+	fmt.Fprintf(&b, "    owner_id = %s,\n", luaString(c.Bot.OwnerID))
+	fmt.Fprintf(&b, "    guild_id = %s,\n", luaString(c.Bot.GuildID))
+	fmt.Fprintf(&b, "    account_id = %s,\n", luaString(c.Bot.AccountID))
+	b.WriteString("}\n")
+	return b.String()
+}
+
+func (c *Config) renderDev() string {
+	var b strings.Builder
+	b.WriteString("return {\n")
 	for _, d := range c.Devapps {
-		b.WriteString("\ndevapp {\n")
-		fmt.Fprintf(&b, "    devid = %s\n", d.DevID)
-		fmt.Fprintf(&b, "    titleid = %s\n", d.TitleID)
-		b.WriteString("}\n")
+		fmt.Fprintf(&b, "    { devid = %s, titleid = %s },\n", luaString(d.DevID), luaString(d.TitleID))
 	}
+	b.WriteString("}\n")
+	return b.String()
+}
+
+func (c *Config) renderMapped() string {
+	var b strings.Builder
+	b.WriteString("return {\n")
+	for _, m := range c.Mapped {
+		fmt.Fprintf(&b, "    { titleid = %s, name = %s, image = %s },\n",
+			luaString(m.TitleID), luaString(m.Name), luaString(m.Image))
+	}
+	b.WriteString("}\n")
 	return b.String()
 }
 
@@ -219,52 +291,48 @@ func (c *Config) Save() error {
 	if err := os.MkdirAll(Dir, 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(Path, []byte(c.renderConf()), 0o644); err != nil {
-		return err
+	for path, want := range c.files() {
+		if err := os.WriteFile(path, []byte(want), 0o644); err != nil {
+			return err
+		}
 	}
-	return c.saveMapped()
-}
-
-func (c *Config) saveMapped() error {
-	if err := os.MkdirAll(Dir, 0o755); err != nil {
-		return err
-	}
-	mapped := c.Mapped
-	if mapped == nil {
-		mapped = []Mapped{}
-	}
-	data, err := json.MarshalIndent(mapped, "", "    ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(MappedPath, append(data, '\n'), 0o644)
+	return nil
 }
 
 func (c *Config) AppendMapped(m Mapped) error {
 	c.Mapped = append(c.Mapped, m)
-	return c.saveMapped()
-}
-
-func atoi(s string, def int) int {
-	if v, err := strconv.Atoi(s); err == nil {
-		return v
+	if err := os.MkdirAll(Dir, 0o755); err != nil {
+		return err
 	}
-	return def
+	return os.WriteFile(MappedPath, []byte(c.renderMapped()), 0o644)
 }
 
-func atoi64(s string, def int64) int64 {
-	if v, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return v
+func luaString(s string) string {
+	r := strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\n", "\\n")
+	return "\"" + r.Replace(s) + "\""
+}
+
+func luaStr(t *lua.LTable, key, def string) string {
+	v := t.RawGetString(key)
+	if v == lua.LNil {
+		return def
 	}
-	return def
+	return lua.LVAsString(v)
 }
 
-func atob(s string, def bool) bool {
-	switch strings.ToLower(s) {
-	case "true", "yes", "1":
-		return true
-	case "false", "no", "0":
-		return false
+func luaInt(t *lua.LTable, key string, def int) int {
+	return int(luaInt64(t, key, int64(def)))
+}
+
+func luaInt64(t *lua.LTable, key string, def int64) int64 {
+	v := t.RawGetString(key)
+	switch val := v.(type) {
+	case lua.LNumber:
+		return int64(val)
+	case lua.LString:
+		if n, err := strconv.ParseInt(strings.TrimSpace(string(val)), 10, 64); err == nil {
+			return n
+		}
 	}
 	return def
 }

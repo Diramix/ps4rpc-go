@@ -6,6 +6,7 @@ require (
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/jlaffaye/ftp v0.2.1
+	github.com/yuin/gopher-lua v1.1.2
 	modernc.org/sqlite v1.56.0
 )
 

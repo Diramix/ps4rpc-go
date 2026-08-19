@@ -130,5 +130,5 @@ func (b *Bot) author() author {
 		b.psnAvatar, b.avatarDone = avatar, true
 		b.mu.Unlock()
 	}
-	return author{name: name, avatar: avatar, iconURL: b.cfg.AvatarURL}
+	return author{name: name, avatar: avatar}
 }

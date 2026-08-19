@@ -8,33 +8,35 @@ import (
 
 func TestRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	oldWD, _ := os.Getwd()
-	defer os.Chdir(oldWD)
-	os.Chdir(dir)
+	SetDir(dir)
 
-	if err := os.MkdirAll(Dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	src := `# PS4RPC configuration
-
-var {
-    ip = 192.168.31.114
-    client_id = 858345055966461973
-    wait_time = 15
-    retro_covers = true
-    hibernate = false
-    hibernate_time = 600
-    use_devapps = false
-    show_timer = false
-    use_appname = false
+	if err := os.WriteFile(RpcPath, []byte(`return {
+    client_id = "858345055966461973",
+    wait_time = 15,
 }
-`
-	if err := os.WriteFile(Path, []byte(src), 0o644); err != nil {
+`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	mappedSrc := `[{"titleid":"CUSA10249","name":"The Last of Us, Part II = Remastered","image":"http://example/icon0.png"}]`
-	if err := os.WriteFile(MappedPath, []byte(mappedSrc), 0o644); err != nil {
+	if err := os.WriteFile(BotPath, []byte("return {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(DevPath, []byte("return {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(MappedPath, []byte(`return {
+    { titleid = "CUSA10249", name = "The Last of Us, Part II = Remastered", image = "http://example/icon0.png" },
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(Path, []byte(`return {
+    var = { ip = "192.168.31.114" },
+    rpc = require("rpc"),
+    bot = require("bot"),
+    dev = require("dev"),
+    mapped = require("mapped"),
+}
+`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -42,7 +44,7 @@ var {
 	if err != nil || !existed {
 		t.Fatalf("load: existed=%v err=%v", existed, err)
 	}
-	if cfg.Var.IP != "192.168.31.114" || cfg.Var.WaitTime != 15 || !cfg.Var.RetroCovers {
+	if cfg.Var.IP != "192.168.31.114" || cfg.Var.WaitTime != 15 {
 		t.Fatalf("var parsed wrong: %+v", cfg.Var)
 	}
 	if cfg.Var.ClientID != 858345055966461973 {
@@ -64,18 +66,33 @@ var {
 	}
 }
 
-func TestAutoMigrate(t *testing.T) {
+func TestMigrateAddsMissingFiles(t *testing.T) {
 	dir := t.TempDir()
 	SetDir(dir)
 
-	// An old file: no `bot` block, plus an obsolete key that must be dropped.
-	old := `var {
-    ip = 10.0.0.5
-    wait_time = 42
-    obsolete_key = something
+	if err := os.WriteFile(RpcPath, []byte(`return {
+    wait_time = 42,
 }
-`
-	if err := os.WriteFile(Path, []byte(old), 0o644); err != nil {
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(Path, []byte(`return {
+    var = { ip = "10.0.0.5" },
+    rpc = require("rpc"),
+    bot = require("bot"),
+    dev = require("dev"),
+    mapped = require("mapped"),
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(BotPath, []byte("return {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(DevPath, []byte("return {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(MappedPath, []byte("return {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -87,32 +104,21 @@ func TestAutoMigrate(t *testing.T) {
 		t.Fatalf("user values not preserved: %+v", cfg.Var)
 	}
 
-	data, err := os.ReadFile(Path)
+	bot, err := os.ReadFile(BotPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := string(data)
-	// New schema keys were added with defaults...
-	for _, key := range []string{"bot {", "owner_id =", "avatar_url =", "account_id ="} {
-		if !strings.Contains(got, key) {
-			t.Errorf("migrated file missing %q\n%s", key, got)
+	for _, key := range []string{"token =", "owner_id =", "guild_id =", "account_id ="} {
+		if !strings.Contains(string(bot), key) {
+			t.Errorf("migrated bot.lua missing %q\n%s", key, bot)
 		}
 	}
-	// ...the obsolete key was removed...
-	if strings.Contains(got, "obsolete_key") {
-		t.Errorf("obsolete key not removed\n%s", got)
-	}
-	// ...and user values survived.
-	if !strings.Contains(got, "ip = 10.0.0.5") || !strings.Contains(got, "wait_time = 42") {
-		t.Errorf("user values lost in migration\n%s", got)
-	}
 
-	// A second load must be a no-op (file already canonical): mtime unchanged.
-	before, _ := os.Stat(Path)
+	before, _ := os.Stat(BotPath)
 	if _, _, err := Load(); err != nil {
 		t.Fatal(err)
 	}
-	after, _ := os.Stat(Path)
+	after, _ := os.Stat(BotPath)
 	if !before.ModTime().Equal(after.ModTime()) {
 		t.Errorf("canonical file was rewritten on second load")
 	}

@@ -34,10 +34,6 @@ tasks:
     cmds:
       - go build -ldflags "{{.LDFLAGS}}" -o {{.BINARY}}.exe .
 
-  genconfig:
-    cmds:
-      - go run ./tools/genconfig
-
   dist:
     deps: [clean-dist]
     vars:
@@ -49,7 +45,7 @@ tasks:
       - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}} .
       - CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}}bot.exe ./cmd/ps4bot
       - CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "{{.LDFLAGS}}" -o {{.DIST}}/{{.BINARY}}bot ./cmd/ps4bot
-      - go run ./tools/genconfig -o {{.DIST}}/config
+      - cp -r defaultConfig {{.DIST}}/config
       - cd {{.DIST}} && zip -r {{.WIN}}.zip {{.BINARY}}.exe {{.BINARY}}bot.exe config
       - cd {{.DIST}} && tar -czf {{.LIN}}.tar.gz {{.BINARY}} {{.BINARY}}bot config
 

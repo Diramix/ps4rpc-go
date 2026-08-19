@@ -23,9 +23,8 @@ type rendered struct {
 }
 
 type author struct {
-	name    string
-	avatar  []byte
-	iconURL string
+	name   string
+	avatar []byte
 }
 
 func (a author) attach(e *discordgo.MessageEmbed, r *rendered) {
@@ -33,16 +32,13 @@ func (a author) attach(e *discordgo.MessageEmbed, r *rendered) {
 		return
 	}
 	ma := &discordgo.MessageEmbedAuthor{Name: a.name}
-	switch {
-	case len(a.avatar) > 0:
+	if len(a.avatar) > 0 {
 		r.files = append(r.files, &discordgo.File{
 			Name:        "avatar.png",
 			ContentType: "image/png",
 			Reader:      bytes.NewReader(a.avatar),
 		})
 		ma.IconURL = "attachment://avatar.png"
-	case a.iconURL != "":
-		ma.IconURL = a.iconURL
 	}
 	e.Author = ma
 }

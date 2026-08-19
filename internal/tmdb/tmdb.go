@@ -74,12 +74,8 @@ func GetPS4GameInfo(titleID string) (name, image string) {
 	return titleID, strings.ToLower(titleID)
 }
 
-func GetClassicGameInfo(titleID string, retroCovers bool) (name, image string) {
-	if retroCovers {
-		image = strings.ToLower(titleID)
-	} else {
-		image = "ps2ps1temp"
-	}
+func GetClassicGameInfo(titleID string) (name, image string) {
+	image = strings.ToLower(titleID)
 	if n, ok := searchClassic("data/ps1_games.md", titleID); ok {
 		return n, image
 	}

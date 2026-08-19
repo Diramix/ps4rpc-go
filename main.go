@@ -19,9 +19,8 @@ import (
 var version = "dev"
 
 var (
-	cfg   *config.Config
-	rpc   *discord.Client
-	timer = time.Now().Unix()
+	cfg *config.Config
+	rpc *discord.Client
 )
 
 func resolveVersion() string {
@@ -82,9 +81,7 @@ func main() {
 			name, image := checkMapped(titleID, gameType)
 			prevTitleID = titleID
 
-			if cfg.Var.UseDevapps {
-				devAppChanged = changeDevApp(titleID, devAppChanged)
-			}
+			devAppChanged = changeDevApp(titleID, devAppChanged)
 
 			if titleID == "main_menu" {
 				_ = rpc.Clear()
@@ -163,7 +160,7 @@ func checkMapped(titleID, gameType string) (name, image string) {
 	case "PS4":
 		name, image = tmdb.GetPS4GameInfo(titleID)
 	case "PS1/2":
-		name, image = tmdb.GetClassicGameInfo(titleID, cfg.Var.RetroCovers)
+		name, image = tmdb.GetClassicGameInfo(titleID)
 	default:
 		name, image = tmdb.GetOtherGameInfo(titleID)
 	}
@@ -190,15 +187,7 @@ func changeDevApp(titleID string, changed bool) bool {
 }
 
 func updatePresence(name, image, titleID string) {
-	a := discord.Activity{LargeImage: image, LargeText: titleID}
-	if cfg.Var.UseAppname {
-		a.Details = name
-	} else {
-		a.Name = name
-	}
-	if cfg.Var.ShowTimer {
-		a.Start = timer
-	}
+	a := discord.Activity{LargeImage: image, LargeText: titleID, Name: name}
 	if err := rpc.Update(a); err != nil {
 		fmt.Printf("Error with Discord: %v\n", err)
 		rpc = discord.ConnectRetry(clientID(cfg.Var.ClientID))
@@ -206,18 +195,11 @@ func updatePresence(name, image, titleID string) {
 }
 
 func sleepSeconds() int {
-	if cfg.Var.Hibernate {
-		return cfg.Var.HibernateTime
-	}
 	return cfg.Var.WaitTime
 }
 
 func sleepFor() {
-	if cfg.Var.Hibernate {
-		time.Sleep(time.Duration(cfg.Var.HibernateTime) * time.Second)
-	} else {
-		time.Sleep(time.Duration(cfg.Var.WaitTime) * time.Second)
-	}
+	time.Sleep(time.Duration(cfg.Var.WaitTime) * time.Second)
 }
 
 func clientID(id int64) string {
