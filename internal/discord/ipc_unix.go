@@ -30,7 +30,6 @@ func dialIPC() (net.Conn, error) {
 func ipcBase() string {
 	for _, env := range []string{"XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP"} {
 		if v := os.Getenv(env); v != "" {
-			// Discord may nest sockets under app/com.discordapp.Discord (Flatpak) etc.
 			if candidate := firstExisting(v); candidate != "" {
 				return candidate
 			}

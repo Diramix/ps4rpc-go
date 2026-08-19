@@ -1,26 +1,19 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"runtime"
 	"runtime/debug"
-	"syscall"
-	"time"
 
 	"ps4rpc/internal/cli"
 	"ps4rpc/internal/config"
-	"ps4rpc/internal/ps4"
-	"ps4rpc/internal/rpcsvc"
+	"ps4rpc/internal/daemon"
 	"ps4rpc/internal/tui"
 )
 
 var version = "dev"
-
-var cfg *config.Config
 
 func resolveVersion() string {
 	if version != "dev" {
@@ -44,8 +37,9 @@ func resolveVersion() string {
 
 func main() {
 	version = resolveVersion()
-	headless := false
-	for _, arg := range os.Args[1:] {
+
+	args := os.Args[1:]
+	for _, arg := range args {
 		switch arg {
 		case "--version", "-v":
 			fmt.Println(version)
@@ -56,55 +50,133 @@ func main() {
 		case "--config", "-c":
 			openConfigDir()
 			return
-		case "--headless", "-headless":
-			headless = true
 		}
 	}
 
-	if !headless && tui.IsTTY() {
-		runTUI()
-		return
+	command := ""
+	if len(args) > 0 {
+		command = args[0]
 	}
-	runHeadless()
+
+	switch command {
+	case daemon.RolePresence, "--headless", "-headless":
+		exit(daemon.RunPresence())
+	case daemon.RoleBot:
+		exit(daemon.RunBot())
+	case "start":
+		exit(startDaemons())
+	case "stop":
+		exit(stopDaemons(args[1:]))
+	case "status":
+		printStatus()
+	case "":
+		runTUI()
+	default:
+		cli.Fail(os.Stderr, fmt.Errorf("unknown command %q, try --help", command))
+		os.Exit(2)
+	}
 }
 
-func runTUI() {
+func exit(err error) {
+	if err != nil {
+		cli.Fail(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func startDaemons() error {
+	if _, err := loadConfig(); err != nil {
+		return err
+	}
+	if err := daemon.EnsureEnabled(); err != nil {
+		return err
+	}
+	printStatus()
+	return nil
+}
+
+func stopDaemons(roles []string) error {
+	if len(roles) == 0 {
+		roles = daemon.Roles
+	}
+	for _, role := range roles {
+		if err := daemon.Shutdown(role); err != nil {
+			return err
+		}
+		fmt.Println(cli.DoneLine(role, "stopped"))
+	}
+	return nil
+}
+
+func printStatus() {
+	if st, ok := daemon.PresenceState(); ok {
+		game := st.GameName
+		if game == "" {
+			game = "-"
+		}
+		fmt.Println(cli.StatusLine(daemon.RolePresence, st.Running, runState(st.Running),
+			cli.Flag("ps4", st.PS4Online), cli.Flag("discord", st.DiscordOK), cli.KV("game", game)))
+	} else {
+		fmt.Println(cli.StatusLine(daemon.RolePresence, false, "not running"))
+	}
+
+	if st, ok := daemon.BotState(); ok {
+		fmt.Println(cli.StatusLine(daemon.RoleBot, st.Running, runState(st.Running),
+			cli.Flag("token", st.HasToken)))
+	} else {
+		fmt.Println(cli.StatusLine(daemon.RoleBot, false, "not running"))
+	}
+}
+
+func runState(running bool) string {
+	if running {
+		return "running"
+	}
+	return "idle"
+}
+
+func loadConfig() (*config.Config, error) {
 	config.SetDir(config.DefaultDir())
 	c, existed, err := config.Load()
 	if err != nil {
-		fmt.Printf("config: %v\n", err)
+		return nil, fmt.Errorf("config: %w", err)
 	}
-	cfg = c
+	if !existed {
+		_ = c.Save()
+	}
+	return c, nil
+}
+
+func runTUI() {
+	cfg, err := loadConfig()
+	if err != nil {
+		cli.Fail(os.Stderr, err)
+		os.Exit(1)
+	}
 
 	startTab := 0
-	if !existed || cfg.Var.IP == "" {
-		_ = cfg.Save()
+	if cfg.Core.IP == "" {
 		startTab = 1
 	}
 
+	if err := daemon.EnsureEnabled(); err != nil {
+		cli.Fail(os.Stderr, err)
+	}
+
+	if !tui.IsTTY() {
+		printStatus()
+		return
+	}
 	if err := tui.Run(cfg, version, startTab); err != nil {
-		fmt.Printf("tui: %v\n", err)
+		cli.Fail(os.Stderr, fmt.Errorf("tui: %w", err))
 		os.Exit(1)
 	}
-}
-
-func runHeadless() {
-	readConfig()
-	if cfg.Var.IP == "" {
-		fmt.Println("readConfig():   no PS4 IP configured, nothing to do")
-		os.Exit(1)
-	}
-
-	svc := rpcsvc.New(cfg, nil)
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	svc.Run(ctx)
 }
 
 func openConfigDir() {
 	dir := config.DefaultDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		fmt.Printf("openConfigDir(): %v\n", err)
+		cli.Fail(os.Stderr, err)
 		return
 	}
 	fmt.Println(dir)
@@ -119,31 +191,6 @@ func openConfigDir() {
 		cmd = exec.Command("xdg-open", dir)
 	}
 	if err := cmd.Start(); err != nil {
-		fmt.Printf("openConfigDir(): %v\n", err)
-	}
-}
-
-func readConfig() {
-	config.SetDir(config.DefaultDir())
-	c, existed, err := config.Load()
-	if err != nil {
-		fmt.Printf("readConfig():   error with config file: %v\n", err)
-	}
-	cfg = c
-	if !existed {
-		cfg.Var.IP = ps4.PromptUser()
-		_ = cfg.Save()
-		return
-	}
-	if !ps4.TestForPS4(cfg.Var.IP) {
-		if cfg.Var.IP == "" {
-			cfg.Var.IP = ps4.PromptUser()
-			_ = cfg.Save()
-		} else {
-			for !ps4.TestForPS4(cfg.Var.IP) {
-				fmt.Printf("readConfig():   ps4 sleeping on '%s', waiting %d seconds\n", cfg.Var.IP, cfg.Var.WaitTime)
-				time.Sleep(time.Duration(cfg.Var.WaitTime) * time.Second)
-			}
-		}
+		cli.Fail(os.Stderr, err)
 	}
 }

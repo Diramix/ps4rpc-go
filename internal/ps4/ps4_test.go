@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// classify replicates the type-resolution logic in GetTitleID for testing.
 func classify(titleID string) string {
 	if titleID == "" {
 		return ""

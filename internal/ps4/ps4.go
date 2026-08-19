@@ -78,7 +78,6 @@ func GetTitleID(ip string) (titleID, gameType string, ok bool) {
 		return "", "", false
 	}
 
-	// RE2 has no lookahead, so skip NPXS entries before matching the titleID.
 	for _, e := range entries {
 		base := e[strings.LastIndex(e, "/")+1:]
 		if strings.HasPrefix(base, "NPXS") {

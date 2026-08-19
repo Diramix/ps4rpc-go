@@ -12,9 +12,11 @@ import (
 
 func newTestModel(t *testing.T) *Model {
 	t.Helper()
+	t.Setenv("PS4RPC_RUNTIME_DIR", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	config.SetDir(t.TempDir())
 	cfg := config.Default()
-	cfg.Var.IP = "127.0.0.1"
+	cfg.Core.IP = "127.0.0.1"
 	cfg.Bot.Token = "secret-token"
 	cfg.Mapped = []config.Mapped{{TitleID: "CUSA10249", Name: "Bloodborne", Image: "icon.png"}}
 
@@ -44,6 +46,17 @@ func send(m *Model, keys ...string) {
 	for _, k := range keys {
 		m.Update(key(k))
 	}
+}
+
+func focusField(t *testing.T, m *Model, label string) {
+	t.Helper()
+	for i, f := range m.fields {
+		if f.label == label {
+			m.cursor = i
+			return
+		}
+	}
+	t.Fatalf("no settings field labelled %q", label)
 }
 
 func TestViewRendersEveryTab(t *testing.T) {
@@ -94,8 +107,9 @@ func TestToggleIsSavedImmediately(t *testing.T) {
 	defer m.Shutdown()
 	m.tabIdx = tabSettings
 
-	send(m, "down", " ")
-	if m.cfg.Var.Enabled {
+	focusField(t, m, "RPC enabled")
+	send(m, " ")
+	if m.cfg.Core.Enabled {
 		t.Error("toggle did not flip the value")
 	}
 	if m.err != "" {
@@ -106,19 +120,18 @@ func TestToggleIsSavedImmediately(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.Var.Enabled {
+	if saved.Core.Enabled {
 		t.Error("toggle was not written to disk without ctrl+s")
 	}
 }
 
-func TestDisablingRPCStopsTheService(t *testing.T) {
+func TestStatusFallsBackToStoppedWithoutDaemons(t *testing.T) {
 	m := newTestModel(t)
 	defer m.Shutdown()
 
-	m.cfg.Var.Enabled = false
-	m.reconcile()
-	if m.svc.Status().Running {
-		t.Fatal("service still running after the toggle went off")
+	m.refreshStatus()
+	if m.rpcStatus.Running || m.botStatus.Running {
+		t.Fatal("status reported as running while no daemon is listening")
 	}
 }
 
@@ -127,8 +140,8 @@ func TestExternalConfigEditIsPickedUp(t *testing.T) {
 	defer m.Shutdown()
 
 	onDisk := m.cfg.Clone()
-	onDisk.Var.IP = "10.9.9.9"
-	onDisk.Var.Enabled = false
+	onDisk.Core.IP = "10.9.9.9"
+	onDisk.Core.Enabled = false
 	if err := onDisk.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -140,11 +153,8 @@ func TestExternalConfigEditIsPickedUp(t *testing.T) {
 	}
 	m.onExternalConfig(cm.cfg)
 
-	if m.cfg.Var.IP != "10.9.9.9" || m.cfg.Var.Enabled {
-		t.Fatalf("config not reloaded: %+v", m.cfg.Var)
-	}
-	if m.svc.Status().Running {
-		t.Error("service not stopped after the file disabled it")
+	if m.cfg.Core.IP != "10.9.9.9" || m.cfg.Core.Enabled {
+		t.Fatalf("config not reloaded: %+v", m.cfg.Core)
 	}
 	if msg := m.watchConfig()(); msg != nil {
 		t.Errorf("watcher fired on an unchanged config: %T", msg)
@@ -155,7 +165,7 @@ func TestInvalidValueIsRejected(t *testing.T) {
 	m := newTestModel(t)
 	defer m.Shutdown()
 	m.tabIdx = tabSettings
-	m.cursor = m.firstSelectable() // PS4 IP
+	m.cursor = m.firstSelectable()
 
 	send(m, "enter")
 	if !m.editing {
@@ -169,8 +179,8 @@ func TestInvalidValueIsRejected(t *testing.T) {
 
 	m.input.SetValue("10.0.0.9")
 	send(m, "enter")
-	if m.editing || m.cfg.Var.IP != "10.0.0.9" {
-		t.Fatalf("valid IP not applied: %q", m.cfg.Var.IP)
+	if m.editing || m.cfg.Core.IP != "10.0.0.9" {
+		t.Fatalf("valid IP not applied: %q", m.cfg.Core.IP)
 	}
 }
 
@@ -208,7 +218,7 @@ func TestTickSchedulesTheConfigWatcher(t *testing.T) {
 	defer m.Shutdown()
 
 	edited := m.cfg.Clone()
-	edited.Var.IP = "10.1.2.3"
+	edited.Core.IP = "10.1.2.3"
 	if err := edited.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -221,8 +231,8 @@ func TestTickSchedulesTheConfigWatcher(t *testing.T) {
 	for _, msg := range msgs {
 		if cm, ok := msg.(configMsg); ok {
 			m.onExternalConfig(cm.cfg)
-			if m.cfg.Var.IP != "10.1.2.3" {
-				t.Fatalf("reload did not apply: %+v", m.cfg.Var)
+			if m.cfg.Core.IP != "10.1.2.3" {
+				t.Fatalf("reload did not apply: %+v", m.cfg.Core)
 			}
 			return
 		}
@@ -282,5 +292,31 @@ func TestTypingCyrillicIsNotRemapped(t *testing.T) {
 	send(m, "ф")
 	if got := m.input.Value(); got != "ф" {
 		t.Fatalf("edit mode swallowed the rune: %q", got)
+	}
+}
+
+func TestAutostartToggleIsPersisted(t *testing.T) {
+	m := newTestModel(t)
+	defer m.Shutdown()
+	m.tabIdx = tabSettings
+
+	if !m.cfg.Core.Autostart {
+		t.Fatal("autostart should start out on")
+	}
+	focusField(t, m, "Autostart")
+	send(m, " ")
+	if m.cfg.Core.Autostart {
+		t.Fatal("toggle did not flip the value")
+	}
+	if m.err != "" {
+		t.Fatalf("apply reported an error: %q", m.err)
+	}
+
+	saved, _, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Core.Autostart {
+		t.Fatal("autostart was not written to disk")
 	}
 }

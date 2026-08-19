@@ -22,8 +22,6 @@ func TestSearchClassicEmbedded(t *testing.T) {
 }
 
 func TestHashMatchesPython(t *testing.T) {
-	// Reference value produced by the original Python implementation for
-	// CUSA10249_00.
 	tid := "CUSA10249_00"
 	mac := hmac.New(sha1.New, tmdbKey)
 	mac.Write([]byte(tid))

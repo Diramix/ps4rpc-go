@@ -62,14 +62,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.listenLogs()
 
 	case configMsg:
-		m.onExternalConfig(msg.cfg)
-		return m, nil
+		return m, m.onExternalConfig(msg.cfg)
 
 	case tickMsg:
 		m.ticks++
+		m.refreshStatus()
 		cmds := []tea.Cmd{tickCmd(), m.watchConfig()}
-		if st := m.svc.Status(); st.Running {
-			m.setPS4Online(st.PS4Online)
+		if m.rpcStatus.Running {
+			m.setPS4Online(m.rpcStatus.PS4Online)
 		} else if m.ticks%probeEverySeconds == 0 {
 			cmds = append(cmds, m.probePS4())
 		}
@@ -126,9 +126,8 @@ func (m *Model) handleDashboardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch keyName(msg) {
 	case "s":
 		m.err = ""
-		m.cfg.Var.Enabled = !m.svc.Status().Running
-		m.applyNow()
-		return m, nil
+		m.cfg.Core.Enabled = !m.rpcStatus.Running
+		return m, m.applyNow()
 	case "c":
 		m.logs = nil
 		m.vp.SetContent("")
@@ -161,7 +160,7 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch f.kind {
 		case fieldToggle:
 			f.toggle(m.cfg)
-			m.applyNow()
+			return m, m.applyNow()
 		case fieldText, fieldSecret:
 			m.editing = true
 			m.input.SetValue(f.get(m.cfg))
@@ -187,8 +186,7 @@ func (m *Model) handleEditKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.editing = false
 		m.err = ""
 		m.input.Blur()
-		m.applyNow()
-		return m, nil
+		return m, m.applyNow()
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
@@ -218,10 +216,10 @@ func (m *Model) handleMappingsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "a":
 		m.addRow()
-		m.applyNow()
+		return m, m.applyNow()
 	case "d":
 		m.deleteRow()
-		m.applyNow()
+		return m, m.applyNow()
 	case " ", "enter":
 		m.err = ""
 		if len(m.cfg.Mapped) == 0 {

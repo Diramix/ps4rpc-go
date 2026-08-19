@@ -8,53 +8,13 @@ import (
 
 type configMsg struct{ cfg *config.Config }
 
-func (m *Model) applyNow() {
+func (m *Model) applyNow() tea.Cmd {
 	if err := m.cfg.Save(); err != nil {
 		m.err = "save: " + err.Error()
-		return
+		return nil
 	}
 	m.fingerprint = config.Fingerprint()
-	m.reconcile()
-}
-
-func (m *Model) reconcile() {
-	m.svc.SetConfig(m.cfg)
-
-	wantRPC := m.cfg.Var.Enabled && m.cfg.Var.IP != ""
-	running := m.svc.Status().Running
-	switch {
-	case wantRPC && running && m.rpcKey() != m.appliedRPC:
-		m.log("rpc: settings changed, restarting")
-		m.svc.Stop()
-		m.startRPC()
-	case wantRPC && !running:
-		m.startRPC()
-	case !wantRPC && running:
-		m.stopRPC()
-	}
-	m.appliedRPC = m.rpcKey()
-
-	wantBot := m.cfg.Bot.Enabled && m.cfg.Bot.Token != ""
-	switch {
-	case wantBot && m.botOnline && m.cfg.Bot != m.appliedBot:
-		m.log("bot: settings changed, restarting")
-		m.stopBot()
-		m.startBot()
-	case wantBot && !m.botOnline:
-		m.startBot()
-	case !wantBot && m.botOnline:
-		m.stopBot()
-	}
-	m.appliedBot = m.cfg.Bot
-}
-
-type rpcKey struct {
-	ip       string
-	clientID int64
-}
-
-func (m *Model) rpcKey() rpcKey {
-	return rpcKey{ip: m.cfg.Var.IP, clientID: m.cfg.Var.ClientID}
+	return m.ensureDaemons()
 }
 
 func (m *Model) watchConfig() tea.Cmd {
@@ -71,15 +31,15 @@ func (m *Model) watchConfig() tea.Cmd {
 	}
 }
 
-func (m *Model) onExternalConfig(cfg *config.Config) {
+func (m *Model) onExternalConfig(cfg *config.Config) tea.Cmd {
 	m.fingerprint = config.Fingerprint()
 	if cfg.Equal(m.cfg) {
-		return
+		return nil
 	}
 	m.cfg = cfg
 	if m.rowMapped >= len(m.cfg.Mapped) {
 		m.rowMapped = max(0, len(m.cfg.Mapped)-1)
 	}
 	m.log("config: reloaded from disk")
-	m.reconcile()
+	return m.ensureDaemons()
 }

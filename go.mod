@@ -11,6 +11,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/jlaffaye/ftp v0.2.1
 	github.com/yuin/gopher-lua v1.1.2
+	golang.org/x/sys v0.47.0
 	modernc.org/sqlite v1.56.0
 )
 
@@ -39,7 +40,6 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/crypto v0.0.0-20210421170649-83a5a9bb288b // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.3.8 // indirect
 	modernc.org/libc v1.74.4 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

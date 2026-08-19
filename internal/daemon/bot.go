@@ -1,0 +1,85 @@
+package daemon
+
+import (
+	"ps4rpc/internal/bot"
+	"ps4rpc/internal/config"
+)
+
+type BotStatus struct {
+	Running  bool   `json:"running"`
+	HasToken bool   `json:"has_token"`
+	GuildID  string `json:"guild_id"`
+	Err      string `json:"err,omitempty"`
+}
+
+type botDaemon struct {
+	logs *logbuf
+
+	cfg     *config.Config
+	bot     *bot.Bot
+	applied config.Bot
+	err     string
+}
+
+func RunBot() error {
+	logs := &logbuf{}
+	logs.captureStdLog()
+	return serve(RoleBot, logs, &botDaemon{logs: logs, cfg: config.Default()})
+}
+
+func (b *botDaemon) status() any {
+	return BotStatus{
+		Running:  b.bot != nil,
+		HasToken: b.cfg.Bot.Token != "",
+		GuildID:  b.cfg.Bot.GuildID,
+		Err:      b.err,
+	}
+}
+
+func (b *botDaemon) reload(cfg *config.Config) {
+	b.cfg = cfg
+	want := Wanted(cfg, RoleBot)
+	key := cfg.Bot
+	key.Enabled = true
+
+	switch {
+	case want && b.bot != nil && key != b.applied:
+		b.logs.printf("bot: settings changed, restarting")
+		b.stop()
+		b.start()
+	case want && b.bot == nil:
+		b.start()
+	case !want && b.bot != nil:
+		b.stop()
+	}
+	b.applied = key
+}
+
+func (b *botDaemon) start() {
+	b.err = ""
+	instance, err := bot.New(b.cfg.Bot, b.cfg.Core.IP)
+	if err != nil {
+		b.fail(err)
+		return
+	}
+	if err := instance.Start(); err != nil {
+		b.fail(err)
+		return
+	}
+	b.bot = instance
+	b.logs.printf("bot: started")
+}
+
+func (b *botDaemon) fail(err error) {
+	b.err = err.Error()
+	b.logs.printf("bot: %v", err)
+}
+
+func (b *botDaemon) stop() {
+	if b.bot == nil {
+		return
+	}
+	b.bot.Stop()
+	b.bot = nil
+	b.logs.printf("bot: stopped")
+}

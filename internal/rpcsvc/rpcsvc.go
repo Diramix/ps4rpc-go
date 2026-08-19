@@ -107,7 +107,7 @@ func (s *Service) Run(ctx context.Context) {
 }
 
 func (s *Service) run(ctx context.Context) {
-	rpc, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Var.ClientID), s.logf)
+	rpc, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Core.ClientID), s.logf)
 	if err != nil {
 		return
 	}
@@ -122,12 +122,12 @@ func (s *Service) run(ctx context.Context) {
 			return
 		}
 
-		titleID, gameType, ok := ps4.GetTitleID(s.conf().Var.IP)
+		titleID, gameType, ok := ps4.GetTitleID(s.conf().Core.IP)
 		if !ok {
 			s.setStatus(func(st *Status) { st.PS4Online = false })
 			s.logf("get_title_id():  PS4 not found, sleeping")
 			for {
-				online, msg := ps4.CheckPS4(s.conf().Var.IP)
+				online, msg := ps4.CheckPS4(s.conf().Core.IP)
 				s.logf("%s", msg)
 				if online {
 					break
@@ -157,7 +157,7 @@ func (s *Service) run(ctx context.Context) {
 				_ = s.currentRPC().Clear()
 			} else {
 				s.closeRPC()
-				c, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Var.ClientID), s.logf)
+				c, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Core.ClientID), s.logf)
 				if err != nil {
 					return
 				}
@@ -172,7 +172,7 @@ func (s *Service) run(ctx context.Context) {
 }
 
 func (s *Service) sleep(ctx context.Context) bool {
-	wait := s.conf().Var.WaitTime
+	wait := s.conf().Core.WaitTime
 	if wait <= 0 {
 		wait = 30
 	}
@@ -248,7 +248,7 @@ func (s *Service) changeDevApp(ctx context.Context, titleID string, changed bool
 	if changed {
 		s.logf("change_dev_app():    reverting to default developer app")
 		s.closeRPC()
-		c, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Var.ClientID), s.logf)
+		c, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Core.ClientID), s.logf)
 		if err != nil {
 			return false
 		}
@@ -267,7 +267,7 @@ func (s *Service) updatePresence(ctx context.Context, name, image, titleID strin
 	if err := c.Update(a); err != nil {
 		s.logf("Error with Discord: %v", err)
 		s.closeRPC()
-		if n, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Var.ClientID), s.logf); err == nil {
+		if n, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Core.ClientID), s.logf); err == nil {
 			s.setRPC(n)
 		}
 	}
