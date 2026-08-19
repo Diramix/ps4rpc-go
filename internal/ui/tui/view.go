@@ -68,10 +68,18 @@ func (m *Model) header() string {
 			tabs = append(tabs, styleTab.Render(label))
 		}
 	}
-	bar := lipgloss.JoinHorizontal(lipgloss.Bottom, title, ver)
+	badge := lipgloss.JoinHorizontal(lipgloss.Bottom, ver, title)
+	tabsBar := strings.Join(tabs, "")
+
+	gap := m.contentWidth() - lipgloss.Width(tabsBar) - lipgloss.Width(badge)
+	if gap < 1 {
+		gap = 1
+	}
+	bar := tabsBar + strings.Repeat(" ", gap) + badge
+
 	line := lipgloss.NewStyle().Foreground(theme.Border).
 		Render(strings.Repeat("─", max(1, m.contentWidth())))
-	return lipgloss.JoinVertical(lipgloss.Left, bar, strings.Join(tabs, ""), line)
+	return lipgloss.JoinVertical(lipgloss.Left, bar, line)
 }
 
 func (m *Model) footer() string {
@@ -118,15 +126,6 @@ func (m *Model) viewDashboard() string {
 	if ip == "" {
 		ip = "not set"
 	}
-	cardW := (m.contentWidth() - 6) / 3
-	if cardW < 18 {
-		cardW = 18
-	}
-	lastW := m.contentWidth() - 6 - 2*cardW
-	if lastW < cardW {
-		lastW = cardW
-	}
-
 	gameName := st.GameName
 	if gameName == "" {
 		gameName = "-"
@@ -138,19 +137,43 @@ func (m *Model) viewDashboard() string {
 	}
 	rpcLines := []string{
 		styleLabel.Render("service ") + upDown(st.Running, "running", "stopped"),
-		styleLabel.Render("game    ") + styleValue.Render(trunc(gameName, cardW-12)),
+		styleLabel.Render("game    ") + styleValue.Render(trunc(gameName, 32)),
 	}
 	botLines := []string{
 		styleLabel.Render("service ") + upDown(m.botStatus.Running, "running", "stopped"),
 		styleLabel.Render("token   ") + onOff(m.cfg.Bot.Token != ""),
 	}
 
-	cardH := max(len(ps4Lines), max(len(rpcLines), len(botLines)))
-	ps4Card := m.card(cardW, cardH, "PlayStation 4", ps4Lines)
-	rpcCard := m.card(cardW, cardH, "Rich Presence", rpcLines)
-	botCard := m.card(lastW, cardH, "Discord bot", botLines)
+	cardW := (m.contentWidth() - 6) / 3
+	if cardW < 18 {
+		cardW = 18
+	}
+	widths := [3]int{cardW, cardW, cardW}
+	widths[2] += m.contentWidth() - 6 - 3*cardW
 
-	cards := lipgloss.JoinHorizontal(lipgloss.Top, ps4Card, rpcCard, botCard)
+	titles := [3]string{"PlayStation 4", "Rich Presence", "Discord bot"}
+	groups := [3][]string{ps4Lines, rpcLines, botLines}
+
+	var rendered [3]string
+	var heights [3]int
+	maxH := 0
+	for i := range groups {
+		rendered[i] = m.card(widths[i], len(groups[i]), titles[i], groups[i])
+		heights[i] = lipgloss.Height(rendered[i])
+		if heights[i] > maxH {
+			maxH = heights[i]
+		}
+	}
+	for i := range groups {
+		if d := maxH - heights[i]; d > 0 {
+			for j := 0; j < d; j++ {
+				groups[i] = append(groups[i], "")
+			}
+			rendered[i] = m.card(widths[i], len(groups[i]), titles[i], groups[i])
+		}
+	}
+
+	cards := lipgloss.JoinHorizontal(lipgloss.Top, rendered[0], rendered[1], rendered[2])
 
 	vpHeight := m.body - lineCount(cards) - 3
 	if vpHeight < 3 {
