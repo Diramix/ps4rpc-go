@@ -108,11 +108,11 @@ func statusEmbed(st ps4.Status, games []ps4.Game, uptime string, icon []byte, na
 
 	if len(games) > 0 {
 		e.Fields = append(e.Fields,
-			&discordgo.MessageEmbedField{Name: "📀 Used", Value: humanBytes(ps4.TotalSize(games)), Inline: true})
+			&discordgo.MessageEmbedField{Name: "Used", Value: humanBytes(ps4.TotalSize(games)), Inline: true})
 	}
 	if st.Online {
 		e.Fields = append(e.Fields,
-			&discordgo.MessageEmbedField{Name: "⏱ Uptime", Value: valueOr(uptime), Inline: true})
+			&discordgo.MessageEmbedField{Name: "Uptime", Value: valueOr(uptime), Inline: true})
 	}
 
 	files, url := iconFile(icon)
