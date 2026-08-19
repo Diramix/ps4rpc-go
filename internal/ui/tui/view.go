@@ -10,12 +10,12 @@ import (
 )
 
 func (m *Model) layout() {
-	w := m.width - 6
+	w := m.contentWidth() - 4
 	if w < 20 {
 		w = 20
 	}
 	m.vp.Width = w
-	m.vp.SetContent(strings.Join(m.logs, "\n"))
+	m.setLogContent()
 	m.vp.GotoBottom()
 }
 

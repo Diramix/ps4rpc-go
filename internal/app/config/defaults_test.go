@@ -20,6 +20,9 @@ func TestDefaultsParse(t *testing.T) {
 	if cfg.Bot.Enabled || cfg.Bot.Token != "" {
 		t.Fatalf("the bot should ship off: %+v", cfg.Bot)
 	}
+	if !cfg.Cache.Enabled || cfg.Cache.Refresh <= 0 || !cfg.Cache.Icons {
+		t.Fatalf("defaults/cache.lua did not reach the config: %+v", cfg.Cache)
+	}
 	if len(cfg.Devapps) != 1 || cfg.Devapps[0] != (DevApp{}) {
 		t.Fatalf("defaults/dev.lua should carry one empty row: %+v", cfg.Devapps)
 	}
@@ -34,6 +37,7 @@ func TestDefaultsMatchWhatTheProgramRenders(t *testing.T) {
 		"main.lua":   cfg.renderMain(),
 		"rpc.lua":    cfg.renderRpc(),
 		"bot.lua":    cfg.renderBot(),
+		"cache.lua":  cfg.renderCache(),
 		"dev.lua":    cfg.renderDev(),
 		"mapped.lua": cfg.renderMapped(),
 	}

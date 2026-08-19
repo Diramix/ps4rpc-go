@@ -18,13 +18,13 @@ func TestLive(t *testing.T) {
 	st, err := c.Status()
 	t.Logf("status=%+v err=%v", st, err)
 
-	games, err := c.Games()
+	games, _, err := c.Games()
 	if err != nil {
 		t.Fatalf("games: %v", err)
 	}
 	t.Logf("games=%d total=%d bytes", len(games), TotalSize(games))
 
-	titles, err := c.TrophyTitles()
+	titles, _, err := c.TrophyTitles()
 	if err != nil {
 		t.Fatalf("titles: %v", err)
 	}
@@ -35,8 +35,8 @@ func TestLive(t *testing.T) {
 		return ""
 	}())
 
-	if tt, err := c.FindTitle("Last of Us"); err == nil {
-		tr, _ := c.Trophies(tt.CommID)
+	if tt, _, err := c.FindTitle("Last of Us"); err == nil {
+		tr, _, _ := c.Trophies(tt.CommID)
 		t.Logf("FindTitle -> %q %d/%d, trophies loaded=%d", tt.Name, tt.Unlocked, tt.Total, len(tr))
 	} else {
 		t.Logf("FindTitle err=%v", err)

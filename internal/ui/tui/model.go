@@ -148,8 +148,12 @@ func (m *Model) appendLog(s string) {
 	if len(m.logs) > maxLogLines {
 		m.logs = m.logs[len(m.logs)-maxLogLines:]
 	}
-	m.vp.SetContent(strings.Join(m.logs, "\n"))
+	m.setLogContent()
 	m.vp.GotoBottom()
+}
+
+func (m *Model) setLogContent() {
+	m.vp.SetContent(wrapLog(m.logs, m.vp.Width))
 }
 
 func (m *Model) Shutdown() {

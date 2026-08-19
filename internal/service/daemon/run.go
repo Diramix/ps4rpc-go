@@ -22,6 +22,29 @@ type service interface {
 	stop()
 }
 
+type syncedService struct {
+	mu  sync.Mutex
+	svc service
+}
+
+func (s *syncedService) status() any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.svc.status()
+}
+
+func (s *syncedService) reload(cfg *config.Config) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.svc.reload(cfg)
+}
+
+func (s *syncedService) stop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.svc.stop()
+}
+
 func serve(role string, logs *logbuf, svc service) error {
 	cfg, _, err := loadConfig()
 	if err != nil {
@@ -31,6 +54,8 @@ func serve(role string, logs *logbuf, svc service) error {
 	stop := make(chan struct{})
 	var stopOnce sync.Once
 	requestStop := func() { stopOnce.Do(func() { close(stop) }) }
+
+	svc = &syncedService{svc: svc}
 
 	srv, err := ipc.Serve(role, func(method string, _ json.RawMessage) (any, error) {
 		switch method {
@@ -84,6 +109,7 @@ func serve(role string, logs *logbuf, svc service) error {
 
 func watchConfig(ctx context.Context, role string, stop <-chan struct{}, requestStop func(), logs *logbuf, svc service) {
 	known := config.Fingerprint()
+	var last *config.Config
 	t := time.NewTicker(watchInterval)
 	defer t.Stop()
 	for {
@@ -103,6 +129,10 @@ func watchConfig(ctx context.Context, role string, stop <-chan struct{}, request
 		if err != nil || !existed {
 			continue
 		}
+		if cfg.Equal(last) {
+			continue
+		}
+		last = cfg
 		logs.printf("config: reloaded from disk")
 		svc.reload(cfg)
 		if !Wanted(cfg, role) {

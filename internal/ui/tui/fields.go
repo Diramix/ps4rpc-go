@@ -34,7 +34,7 @@ func settingsFields() []field {
 		{
 			kind:  fieldText,
 			label: "PS4 IP",
-			help:  "address of the console running GoldHEN",
+			help:  "Address of the console running GoldHEN",
 			get:   func(c *config.Config) string { return c.Core.IP },
 			set: func(c *config.Config, v string) error {
 				if v == "" {
@@ -58,14 +58,14 @@ func settingsFields() []field {
 		{
 			kind:    fieldToggle,
 			label:   "RPC enabled",
-			help:    "start the presence loop automatically",
+			help:    "Start the presence loop",
 			getBool: func(c *config.Config) bool { return c.Core.Enabled },
 			toggle:  func(c *config.Config) { c.Core.Enabled = !c.Core.Enabled },
 		},
 		{
 			kind:  fieldText,
 			label: "Client ID",
-			help:  "default Discord application ID",
+			help:  "Discord application ID",
 			get:   func(c *config.Config) string { return strconv.FormatInt(c.Core.ClientID, 10) },
 			set: func(c *config.Config, v string) error {
 				n, err := strconv.ParseInt(v, 10, 64)
@@ -79,7 +79,7 @@ func settingsFields() []field {
 		{
 			kind:  fieldText,
 			label: "Poll interval",
-			help:  "seconds between PS4 requests",
+			help:  "Seconds between PS4 requests",
 			get:   func(c *config.Config) string { return strconv.Itoa(c.Core.WaitTime) },
 			set: func(c *config.Config, v string) error {
 				n, err := strconv.Atoi(v)
@@ -95,34 +95,60 @@ func settingsFields() []field {
 		{
 			kind:    fieldToggle,
 			label:   "Bot enabled",
-			help:    "start the bot automatically",
+			help:    "Start the bot",
 			getBool: func(c *config.Config) bool { return c.Bot.Enabled },
 			toggle:  func(c *config.Config) { c.Bot.Enabled = !c.Bot.Enabled },
 		},
 		{
 			kind:  fieldSecret,
 			label: "Token",
-			help:  "bot token, v to show or hide",
+			help:  "Bot token, v to show or hide",
 			get:   func(c *config.Config) string { return c.Bot.Token },
 			set:   func(c *config.Config, v string) error { c.Bot.Token = v; return nil },
 		},
 		{
 			kind:  fieldText,
-			label: "Owner ID",
+			label: "Owner UID",
+			help:  "Discord user ID of the bot owner",
 			get:   func(c *config.Config) string { return c.Bot.OwnerID },
 			set:   func(c *config.Config, v string) error { c.Bot.OwnerID = v; return nil },
 		},
 		{
 			kind:  fieldText,
-			label: "Guild ID",
-			get:   func(c *config.Config) string { return c.Bot.GuildID },
-			set:   func(c *config.Config, v string) error { c.Bot.GuildID = v; return nil },
+			label: "PS4 Account ID",
+			help:  "Local PS4 account ID",
+			get:   func(c *config.Config) string { return c.Bot.AccountID },
+			set:   func(c *config.Config, v string) error { c.Bot.AccountID = v; return nil },
+		},
+
+		{kind: fieldSection, label: "Cache"},
+		{
+			kind:    fieldToggle,
+			label:   "Cache enabled",
+			help:    "Keep console data on disk so the bot answers while the PS4 is off",
+			getBool: func(c *config.Config) bool { return c.Cache.Enabled },
+			toggle:  func(c *config.Config) { c.Cache.Enabled = !c.Cache.Enabled },
 		},
 		{
 			kind:  fieldText,
-			label: "Account ID",
-			get:   func(c *config.Config) string { return c.Bot.AccountID },
-			set:   func(c *config.Config, v string) error { c.Bot.AccountID = v; return nil },
+			label: "Refresh",
+			help:  "Minutes between background cache refreshes",
+			get:   func(c *config.Config) string { return strconv.Itoa(c.Cache.Refresh) },
+			set: func(c *config.Config, v string) error {
+				n, err := strconv.Atoi(v)
+				if err != nil || n <= 0 {
+					return fmt.Errorf("refresh must be a number > 0")
+				}
+				c.Cache.Refresh = n
+				return nil
+			},
+		},
+		{
+			kind:    fieldToggle,
+			label:   "Cache icons",
+			help:    "Download the cover art of every game",
+			getBool: func(c *config.Config) bool { return c.Cache.Icons },
+			toggle:  func(c *config.Config) { c.Cache.Icons = !c.Cache.Icons },
 		},
 	}
 }

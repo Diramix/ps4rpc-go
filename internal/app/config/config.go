@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +20,7 @@ var (
 	BotPath    = filepath.Join(Dir, "bot.lua")
 	DevPath    = filepath.Join(Dir, "dev.lua")
 	MappedPath = filepath.Join(Dir, "mapped.lua")
+	CachePath  = filepath.Join(Dir, "cache.lua")
 )
 
 func DataDir() string {
@@ -41,6 +44,10 @@ func DefaultDir() string {
 	return filepath.Join(DataDir(), "config")
 }
 
+func CacheDir() string {
+	return filepath.Join(DataDir(), "cache")
+}
+
 func SetDir(dir string) {
 	Dir = dir
 	Path = filepath.Join(Dir, "main.lua")
@@ -48,6 +55,7 @@ func SetDir(dir string) {
 	BotPath = filepath.Join(Dir, "bot.lua")
 	DevPath = filepath.Join(Dir, "dev.lua")
 	MappedPath = filepath.Join(Dir, "mapped.lua")
+	CachePath = filepath.Join(Dir, "cache.lua")
 }
 
 type Core struct {
@@ -66,9 +74,14 @@ type DevApp struct {
 type Bot struct {
 	Token     string
 	OwnerID   string
-	GuildID   string
 	AccountID string
 	Enabled   bool
+}
+
+type Cache struct {
+	Enabled bool
+	Refresh int
+	Icons   bool
 }
 
 type Mapped struct {
@@ -80,6 +93,7 @@ type Mapped struct {
 type Config struct {
 	Core    Core
 	Bot     Bot
+	Cache   Cache
 	Devapps []DevApp
 	Mapped  []Mapped
 }
@@ -111,6 +125,7 @@ func Load() (*Config, bool, error) {
 	cfg.applyCore(coreTable(root))
 	cfg.applyRpc(tableField(root, "rpc"))
 	cfg.applyBot(tableField(root, "bot"))
+	cfg.applyCache(tableField(root, "cache"))
 	cfg.applyDev(tableField(root, "dev"))
 	cfg.applyMapped(tableField(root, "mapped"))
 
@@ -174,9 +189,18 @@ func (c *Config) applyBot(t *lua.LTable) {
 	b := &c.Bot
 	b.Token = luaStr(t, "token", b.Token)
 	b.OwnerID = luaStr(t, "owner_id", b.OwnerID)
-	b.GuildID = luaStr(t, "guild_id", b.GuildID)
 	b.AccountID = luaStr(t, "account_id", b.AccountID)
 	b.Enabled = luaBool(t, "enabled", b.Enabled)
+}
+
+func (c *Config) applyCache(t *lua.LTable) {
+	if t == nil {
+		return
+	}
+	v := &c.Cache
+	v.Enabled = luaBool(t, "enabled", v.Enabled)
+	v.Refresh = luaInt(t, "refresh", v.Refresh)
+	v.Icons = luaBool(t, "icons", v.Icons)
 }
 
 func (c *Config) applyDev(t *lua.LTable) {
@@ -230,6 +254,7 @@ func (c *Config) files() map[string]string {
 		Path:       c.renderMain(),
 		RpcPath:    c.renderRpc(),
 		BotPath:    c.renderBot(),
+		CachePath:  c.renderCache(),
 		DevPath:    c.renderDev(),
 		MappedPath: c.renderMapped(),
 	}
@@ -244,6 +269,7 @@ func (c *Config) renderMain() string {
 	b.WriteString("    },\n")
 	b.WriteString("    rpc = require(\"rpc\"),\n")
 	b.WriteString("    bot = require(\"bot\"),\n")
+	b.WriteString("    cache = require(\"cache\"),\n")
 	b.WriteString("    dev = require(\"dev\"),\n")
 	b.WriteString("    mapped = require(\"mapped\"),\n")
 	b.WriteString("}\n")
@@ -265,9 +291,18 @@ func (c *Config) renderBot() string {
 	b.WriteString("return {\n")
 	fmt.Fprintf(&b, "    token = %s,\n", luaString(c.Bot.Token))
 	fmt.Fprintf(&b, "    owner_id = %s,\n", luaString(c.Bot.OwnerID))
-	fmt.Fprintf(&b, "    guild_id = %s,\n", luaString(c.Bot.GuildID))
 	fmt.Fprintf(&b, "    account_id = %s,\n", luaString(c.Bot.AccountID))
 	fmt.Fprintf(&b, "    enabled = %t,\n", c.Bot.Enabled)
+	b.WriteString("}\n")
+	return b.String()
+}
+
+func (c *Config) renderCache() string {
+	var b strings.Builder
+	b.WriteString("return {\n")
+	fmt.Fprintf(&b, "    enabled = %t,\n", c.Cache.Enabled)
+	fmt.Fprintf(&b, "    refresh = %d,\n", c.Cache.Refresh)
+	fmt.Fprintf(&b, "    icons = %t,\n", c.Cache.Icons)
 	b.WriteString("}\n")
 	return b.String()
 }
@@ -363,7 +398,7 @@ func (c *Config) Clone() *Config {
 }
 
 func (c *Config) Equal(o *Config) bool {
-	if o == nil || c.Core != o.Core || c.Bot != o.Bot ||
+	if o == nil || c.Core != o.Core || c.Bot != o.Bot || c.Cache != o.Cache ||
 		len(c.Devapps) != len(o.Devapps) || len(c.Mapped) != len(o.Mapped) {
 		return false
 	}
@@ -381,14 +416,15 @@ func (c *Config) Equal(o *Config) bool {
 }
 
 func Fingerprint() string {
-	var b strings.Builder
-	for _, p := range []string{Path, RpcPath, BotPath, DevPath, MappedPath} {
-		fi, err := os.Stat(p)
+	h := sha256.New()
+	for _, p := range []string{Path, RpcPath, BotPath, CachePath, DevPath, MappedPath} {
+		fmt.Fprintf(h, "%s:", p)
+		raw, err := os.ReadFile(p)
 		if err != nil {
-			b.WriteString(p + ":-;")
+			h.Write([]byte("-"))
 			continue
 		}
-		fmt.Fprintf(&b, "%s:%d:%d;", p, fi.Size(), fi.ModTime().UnixNano())
+		h.Write(raw)
 	}
-	return b.String()
+	return hex.EncodeToString(h.Sum(nil))
 }

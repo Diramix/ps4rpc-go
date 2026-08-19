@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -43,6 +44,24 @@ func (a author) attach(e *discordgo.MessageEmbed, r *rendered) {
 	e.Author = ma
 }
 
+func cachedNote(m ps4.Meta) string {
+	if !m.Stale() {
+		return ""
+	}
+	return "📦 cached " + humanDuration(time.Since(m.Fetched)) + " ago"
+}
+
+func footerText(base string, m ps4.Meta) string {
+	note := cachedNote(m)
+	switch {
+	case note == "":
+		return base
+	case base == "":
+		return note
+	}
+	return base + " · " + note
+}
+
 func iconFile(data []byte) ([]*discordgo.File, string) {
 	if len(data) == 0 {
 		return nil, ""
@@ -64,7 +83,7 @@ func pageRow(prevID, nextID string, page, pages int) []discordgo.MessageComponen
 	}}}
 }
 
-func statusEmbed(st ps4.Status, games []ps4.Game, uptime string, icon []byte, name string, auth author) rendered {
+func statusEmbed(st ps4.Status, games []ps4.Game, uptime string, icon []byte, name string, auth author, meta ps4.Meta) rendered {
 	e := &discordgo.MessageEmbed{}
 	switch st.State {
 	case ps4.StateGame:
@@ -87,18 +106,20 @@ func statusEmbed(st ps4.Status, games []ps4.Game, uptime string, icon []byte, na
 		e.Title = "😴 Offline / asleep"
 	}
 
+	if len(games) > 0 {
+		e.Fields = append(e.Fields,
+			&discordgo.MessageEmbedField{Name: "📀 Used", Value: humanBytes(ps4.TotalSize(games)), Inline: true})
+	}
 	if st.Online {
 		e.Fields = append(e.Fields,
-			&discordgo.MessageEmbedField{Name: "📀 Used", Value: humanBytes(ps4.TotalSize(games)), Inline: true},
-			&discordgo.MessageEmbedField{Name: "⏱ Uptime", Value: valueOr(uptime), Inline: true},
-		)
+			&discordgo.MessageEmbedField{Name: "⏱ Uptime", Value: valueOr(uptime), Inline: true})
 	}
 
 	files, url := iconFile(icon)
 	if url != "" {
 		e.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: url}
 	}
-	e.Footer = &discordgo.MessageEmbedFooter{Text: "PlayStation®4"}
+	e.Footer = &discordgo.MessageEmbedFooter{Text: footerText("PlayStation 4", meta)}
 
 	r := rendered{embed: e, files: files}
 	auth.attach(e, &r)
@@ -123,7 +144,7 @@ func sortGames(games []ps4.Game, mode string) {
 	}
 }
 
-func libraryEmbed(games []ps4.Game, mode string, page int) rendered {
+func libraryEmbed(games []ps4.Game, mode string, page int, meta ps4.Meta) rendered {
 	sortGames(games, mode)
 	pages := (len(games) + libPageSize - 1) / libPageSize
 	if pages == 0 {
@@ -143,7 +164,7 @@ func libraryEmbed(games []ps4.Game, mode string, page int) rendered {
 		Description: sb.String(),
 		Color:       colorPS4,
 		Footer: &discordgo.MessageEmbedFooter{
-			Text: fmt.Sprintf("Page %d/%d · %d games · %s", page+1, pages, len(games), humanBytes(ps4.TotalSize(games))),
+			Text: footerText(fmt.Sprintf("Page %d/%d · %d games · %s", page+1, pages, len(games), humanBytes(ps4.TotalSize(games))), meta),
 		},
 	}
 	prev := fmt.Sprintf("lib:%s:%d", mode, page-1)
@@ -151,7 +172,7 @@ func libraryEmbed(games []ps4.Game, mode string, page int) rendered {
 	return rendered{embed: e, components: pageRow(prev, next, page, pages)}
 }
 
-func gameEmbed(g ps4.Game, playtime string, starts int, icon []byte, auth author) rendered {
+func gameEmbed(g ps4.Game, playtime string, starts int, icon []byte, auth author, meta ps4.Meta) rendered {
 	e := &discordgo.MessageEmbed{
 		Title: g.Name,
 		Color: colorPS4,
@@ -168,6 +189,9 @@ func gameEmbed(g ps4.Game, playtime string, starts int, icon []byte, auth author
 		}
 		e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "Playtime", Value: v, Inline: true})
 	}
+	if note := cachedNote(meta); note != "" {
+		e.Footer = &discordgo.MessageEmbedFooter{Text: note}
+	}
 	files, url := iconFile(icon)
 	if url != "" {
 		e.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: url}
@@ -177,7 +201,7 @@ func gameEmbed(g ps4.Game, playtime string, starts int, icon []byte, auth author
 	return r
 }
 
-func recentEmbed(games []ps4.Game) rendered {
+func recentEmbed(games []ps4.Game, meta ps4.Meta) rendered {
 	sortGames(games, "recent")
 	var sb strings.Builder
 	for i := 0; i < len(games) && i < 10; i++ {
@@ -188,6 +212,9 @@ func recentEmbed(games []ps4.Game) rendered {
 		sb.WriteString("no data")
 	}
 	e := &discordgo.MessageEmbed{Title: "Recently played", Description: sb.String(), Color: colorPS4}
+	if note := cachedNote(meta); note != "" {
+		e.Footer = &discordgo.MessageEmbedFooter{Text: note}
+	}
 	return rendered{embed: e}
 }
 
@@ -204,7 +231,7 @@ func filterTrophies(all []ps4.Trophy, filter string) []ps4.Trophy {
 	return out
 }
 
-func trophyEmbed(title ps4.TrophyTitle, all []ps4.Trophy, filter string, page int, icon []byte) rendered {
+func trophyEmbed(title ps4.TrophyTitle, all []ps4.Trophy, filter string, page int, icon []byte, meta ps4.Meta) rendered {
 	list := filterTrophies(all, filter)
 	pages := (len(list) + trophyPageSize - 1) / trophyPageSize
 	if pages == 0 {
@@ -239,7 +266,7 @@ func trophyEmbed(title ps4.TrophyTitle, all []ps4.Trophy, filter string, page in
 		Description: sb.String(),
 		Color:       colorTrophy,
 		Footer: &discordgo.MessageEmbedFooter{
-			Text: fmt.Sprintf("Page %d/%d · last trophy", page+1, pages),
+			Text: footerText(fmt.Sprintf("Page %d/%d · last trophy", page+1, pages), meta),
 		},
 	}
 	if !title.LastUnlocked.IsZero() {

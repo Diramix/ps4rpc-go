@@ -34,6 +34,18 @@ var (
 	}
 )
 
+func wrapLog(lines []string, width int) string {
+	if width < 10 {
+		width = 10
+	}
+	style := lipgloss.NewStyle().Width(width)
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		out = append(out, strings.TrimRight(style.Render(line), " "))
+	}
+	return strings.Join(out, "\n")
+}
+
 func formatLog(line string) string {
 	stamp := styleLogTime.Render(time.Now().Format("15:04:05"))
 

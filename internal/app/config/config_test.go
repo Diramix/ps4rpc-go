@@ -169,7 +169,7 @@ func TestMigrateAddsMissingFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"token =", "owner_id =", "guild_id =", "account_id ="} {
+	for _, key := range []string{"token =", "owner_id =", "account_id ="} {
 		if !strings.Contains(string(bot), key) {
 			t.Errorf("migrated bot.lua missing %q\n%s", key, bot)
 		}

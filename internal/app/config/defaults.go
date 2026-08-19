@@ -10,7 +10,7 @@ import (
 //go:embed defaults/*.lua
 var defaults embed.FS
 
-var modules = []string{"rpc", "bot", "dev", "mapped"}
+var modules = []string{"rpc", "bot", "cache", "dev", "mapped"}
 
 func Default() *Config {
 	cfg, err := loadDefaults()
@@ -56,6 +56,7 @@ func loadDefaults() (*Config, error) {
 	cfg.applyCore(coreTable(root))
 	cfg.applyRpc(tableField(root, "rpc"))
 	cfg.applyBot(tableField(root, "bot"))
+	cfg.applyCache(tableField(root, "cache"))
 	cfg.applyDev(tableField(root, "dev"))
 	cfg.applyMapped(tableField(root, "mapped"))
 	if cfg.Mapped == nil {

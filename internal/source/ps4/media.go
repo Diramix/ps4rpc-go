@@ -8,26 +8,29 @@ import (
 	"github.com/jlaffaye/ftp"
 )
 
-func (c *Client) Icon(titleID string) ([]byte, error) {
-	return c.download(fmt.Sprintf("/user/appmeta/%s/icon0.png", titleID))
+func IconPath(titleID string) string {
+	return fmt.Sprintf("/user/appmeta/%s/icon0.png", titleID)
 }
 
-func (c *Client) Avatar() ([]byte, error) {
+func (c *Client) Icon(titleID string) ([]byte, Meta, error) {
+	return c.download(IconPath(titleID))
+}
+
+func (c *Client) Avatar() ([]byte, Meta, error) {
 	acc, err := c.AccountID()
 	if err != nil {
-		return nil, err
+		return nil, Meta{}, err
 	}
 	base := "/system_data/priv/cache/profile/0x" + strings.ToUpper(acc) + "/"
 	for _, name := range []string{"avatar.png", "picture.png"} {
-		if data, err := c.download(base + name); err == nil && len(data) > 0 {
-			return data, nil
+		if data, meta, err := c.download(base + name); err == nil && len(data) > 0 {
+			return data, meta, nil
 		}
 	}
-	return nil, errNoAvatar
+	return nil, Meta{}, errNoAvatar
 }
 
-func (c *Client) LatestScreenshot() (name string, data []byte, err error) {
-
+func (c *Client) LatestScreenshot() (name string, data []byte, meta Meta, err error) {
 	roots := []string{"/user/av_contents/photo"}
 	var best *ftp.Entry
 	var bestDir string
@@ -35,13 +38,38 @@ func (c *Client) LatestScreenshot() (name string, data []byte, err error) {
 		best, bestDir = c.walkForCapture(root, best, bestDir, 0)
 	}
 	if best == nil {
-		return "", nil, errNoCapture
+		if name, data, meta, ok := c.cachedScreenshot(); ok {
+			return name, data, meta, nil
+		}
+		return "", nil, Meta{}, errNoCapture
 	}
 	data, err = c.retr(bestDir + "/" + best.Name)
 	if err != nil {
-		return "", nil, err
+		if name, data, meta, ok := c.cachedScreenshot(); ok {
+			return name, data, meta, nil
+		}
+		return "", nil, Meta{}, err
 	}
-	return best.Name, data, nil
+	_ = c.store.Put(screenshotKey, data)
+	_ = c.store.Put(screenshotNameKey, []byte(best.Name))
+	return best.Name, data, liveMeta(), nil
+}
+
+const (
+	screenshotKey     = "meta/last_screenshot"
+	screenshotNameKey = "meta/last_screenshot.name"
+)
+
+func (c *Client) cachedScreenshot() (name string, data []byte, meta Meta, ok bool) {
+	data, fetched, ok := c.store.Get(screenshotKey)
+	if !ok {
+		return "", nil, Meta{}, false
+	}
+	name = "screenshot.jpg"
+	if raw, _, ok := c.store.Get(screenshotNameKey); ok && len(raw) > 0 {
+		name = string(raw)
+	}
+	return name, data, Meta{Fetched: fetched}, true
 }
 
 const (

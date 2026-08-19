@@ -8,8 +8,12 @@ import (
 	"time"
 )
 
+func PlaytimePath(titleID string) string {
+	return "/data/GoldHEN/stats/" + titleID + ".ini"
+}
+
 func (c *Client) Playtime(titleID string) (played time.Duration, starts int, ok bool) {
-	data, err := c.download("/data/GoldHEN/stats/" + titleID + ".ini")
+	data, _, err := c.download(PlaytimePath(titleID))
 	if err != nil {
 		return 0, 0, false
 	}

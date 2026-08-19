@@ -51,6 +51,7 @@ func PrintHelp(w io.Writer, version string) {
 	for _, row := range [][2]string{
 		{"Config directory", config.DefaultDir()},
 		{"Runtime directory", ipc.RuntimeDir()},
+		{"Cache directory", config.CacheDir()},
 		{"Autostart entry", autostart.Location()},
 	} {
 		fmt.Fprintf(&b, "%s  %s\n", styleKey.Render(pad(row[0]+":", 18)), styleValue.Render(row[1]))

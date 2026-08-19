@@ -39,25 +39,34 @@ type Trophy struct {
 	Description  string
 }
 
-func (c *Client) trophyDB() ([]byte, error) {
+func (c *Client) trophyDB(get func(string) ([]byte, Meta, error)) ([]byte, Meta, error) {
 	acc, err := c.AccountID()
 	if err != nil {
-		return nil, err
+		return nil, Meta{}, err
 	}
-	return c.download(fmt.Sprintf("/user/home/%s/trophy/db/trophy_local.db", acc))
+	return get(fmt.Sprintf("/user/home/%s/trophy/db/trophy_local.db", acc))
 }
 
-func (c *Client) TrophyTitles() ([]TrophyTitle, error) {
-	data, err := c.trophyDB()
+func (c *Client) TrophyTitles() ([]TrophyTitle, Meta, error) {
+	return c.trophyTitles(c.download)
+}
+
+func (c *Client) TrophyTitlesCached() ([]TrophyTitle, Meta, error) {
+	return c.trophyTitles(c.downloadCached)
+}
+
+func (c *Client) trophyTitles(get func(string) ([]byte, Meta, error)) ([]TrophyTitle, Meta, error) {
+	data, meta, err := c.trophyDB(get)
 	if err != nil {
-		return nil, err
+		return nil, meta, err
 	}
 	db, cleanup, err := openDB(data)
 	if err != nil {
-		return nil, err
+		return nil, meta, err
 	}
 	defer cleanup()
-	return queryTrophyTitles(db)
+	titles, err := queryTrophyTitles(db)
+	return titles, meta, err
 }
 
 func queryTrophyTitles(db *sql.DB) ([]TrophyTitle, error) {
@@ -86,36 +95,37 @@ FROM tbl_trophy_title ORDER BY time_last_unlocked DESC`
 	return titles, rows.Err()
 }
 
-func (c *Client) FindTitle(query string) (TrophyTitle, error) {
-	titles, err := c.TrophyTitles()
+func (c *Client) FindTitle(query string) (TrophyTitle, Meta, error) {
+	titles, meta, err := c.TrophyTitles()
 	if err != nil {
-		return TrophyTitle{}, err
+		return TrophyTitle{}, meta, err
 	}
 	q := strings.ToLower(strings.TrimSpace(query))
 	for _, t := range titles {
 		if strings.EqualFold(t.Name, query) || t.CommID == query {
-			return t, nil
+			return t, meta, nil
 		}
 	}
 	for _, t := range titles {
 		if strings.Contains(strings.ToLower(t.Name), q) {
-			return t, nil
+			return t, meta, nil
 		}
 	}
-	return TrophyTitle{}, errNoTitle
+	return TrophyTitle{}, meta, errNoTitle
 }
 
-func (c *Client) Trophies(commID string) ([]Trophy, error) {
-	data, err := c.trophyDB()
+func (c *Client) Trophies(commID string) ([]Trophy, Meta, error) {
+	data, meta, err := c.trophyDB(c.download)
 	if err != nil {
-		return nil, err
+		return nil, meta, err
 	}
 	db, cleanup, err := openDB(data)
 	if err != nil {
-		return nil, err
+		return nil, meta, err
 	}
 	defer cleanup()
-	return queryTrophies(db, commID)
+	trophies, err := queryTrophies(db, commID)
+	return trophies, meta, err
 }
 
 func queryTrophies(db *sql.DB, commID string) ([]Trophy, error) {
@@ -146,10 +156,10 @@ FROM tbl_trophy_flag WHERE trophy_title_id = ? ORDER BY groupid, trophyid`
 	return trophies, rows.Err()
 }
 
-func (c *Client) SearchTitles(query string, limit int) ([]TrophyTitle, error) {
-	titles, err := c.TrophyTitles()
+func (c *Client) SearchTitles(query string, limit int) ([]TrophyTitle, Meta, error) {
+	titles, meta, err := c.TrophyTitlesCached()
 	if err != nil {
-		return nil, err
+		return nil, meta, err
 	}
 	q := strings.ToLower(strings.TrimSpace(query))
 	var out []TrophyTitle
@@ -162,5 +172,5 @@ func (c *Client) SearchTitles(query string, limit int) ([]TrophyTitle, error) {
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
+	return out, meta, nil
 }

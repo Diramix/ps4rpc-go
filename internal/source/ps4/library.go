@@ -22,17 +22,26 @@ func (g Game) IsGame() bool {
 	return strings.HasPrefix(g.Category, "gd")
 }
 
-func (c *Client) Library() ([]Game, error) {
-	data, err := c.download(appDBPath)
+func (c *Client) Library() ([]Game, Meta, error) {
+	return c.library(c.download)
+}
+
+func (c *Client) LibraryCached() ([]Game, Meta, error) {
+	return c.library(c.downloadCached)
+}
+
+func (c *Client) library(get func(string) ([]byte, Meta, error)) ([]Game, Meta, error) {
+	data, meta, err := get(appDBPath)
 	if err != nil {
-		return nil, err
+		return nil, meta, err
 	}
 	db, cleanup, err := openDB(data)
 	if err != nil {
-		return nil, err
+		return nil, meta, err
 	}
 	defer cleanup()
-	return queryLibrary(db)
+	games, err := queryLibrary(db)
+	return games, meta, err
 }
 
 func queryLibrary(db *sql.DB) ([]Game, error) {
@@ -82,10 +91,17 @@ FROM tbl_appinfo GROUP BY titleId`
 	return games, nil
 }
 
-func (c *Client) Games() ([]Game, error) {
-	all, err := c.Library()
+func (c *Client) Games() ([]Game, Meta, error) {
+	return games(c.Library())
+}
+
+func (c *Client) GamesCached() ([]Game, Meta, error) {
+	return games(c.LibraryCached())
+}
+
+func games(all []Game, meta Meta, err error) ([]Game, Meta, error) {
 	if err != nil {
-		return nil, err
+		return nil, meta, err
 	}
 	games := all[:0]
 	for _, g := range all {
@@ -93,7 +109,7 @@ func (c *Client) Games() ([]Game, error) {
 			games = append(games, g)
 		}
 	}
-	return games, nil
+	return games, meta, nil
 }
 
 func TotalSize(games []Game) int64 {

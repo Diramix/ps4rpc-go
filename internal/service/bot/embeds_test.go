@@ -17,14 +17,14 @@ func sampleGames() []ps4.Game {
 
 func TestStatusEmbedGame(t *testing.T) {
 	st := ps4.Status{Online: true, State: ps4.StateGame, TitleID: "CUSA00512", SessionStart: time.Now().Add(-time.Hour)}
-	r := statusEmbed(st, sampleGames(), "3h 21m", nil, "Beyond: Two Souls™", author{name: "diram1x"})
+	r := statusEmbed(st, sampleGames(), "3h 21m", nil, "Beyond: Two Souls™", author{name: "diram1x"}, ps4.Meta{Live: true})
 	if r.embed == nil || !strings.Contains(r.embed.Description, "Beyond") {
 		t.Fatalf("bad status embed: %+v", r.embed)
 	}
 }
 
 func TestLibraryEmbedPaging(t *testing.T) {
-	r := libraryEmbed(sampleGames(), "size", 0)
+	r := libraryEmbed(sampleGames(), "size", 0, ps4.Meta{Live: true})
 	if r.embed.Description == "" {
 		t.Fatal("empty library")
 	}
@@ -39,7 +39,7 @@ func TestTrophyEmbed(t *testing.T) {
 		{ID: 1, Grade: ps4.GradeGold, Unlocked: true, Name: "What I Had to Do", Description: "Complete the story", TimeUnlocked: time.Now()},
 		{ID: 2, Grade: ps4.GradeBronze, Unlocked: false, Hidden: true, Name: "Secret", Description: "hidden"},
 	}
-	r := trophyEmbed(title, trophies, "all", 0, nil)
+	r := trophyEmbed(title, trophies, "all", 0, nil, ps4.Meta{Live: true})
 	if !strings.Contains(r.embed.Description, "🏆 1") {
 		t.Errorf("missing counts: %q", r.embed.Description)
 	}

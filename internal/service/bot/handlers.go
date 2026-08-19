@@ -122,38 +122,39 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 
 func (b *Bot) buildStatus() rendered {
 	st, _ := b.info.Status()
-	var games []ps4.Game
 	var uptime string
 	var name string
 	var icon []byte
+
+	games, meta, _ := b.info.Games()
 	if st.Online {
-		games, _ = b.info.Games()
 		if d, err := b.info.Uptime(); err == nil {
 			uptime = humanDuration(d)
 		}
-		if st.State == ps4.StateGame {
-			for _, g := range games {
-				if g.TitleID == st.TitleID {
-					name = g.Name
-				}
-			}
-			icon = b.iconForTitle(st.TitleID)
-		}
 	}
-	return statusEmbed(st, games, uptime, icon, name, b.author())
+	if st.State == ps4.StateGame {
+		for _, g := range games {
+			if g.TitleID == st.TitleID {
+				name = g.Name
+			}
+		}
+		icon, _ = b.iconForTitle(st.TitleID)
+	}
+	auth, _ := b.author()
+	return statusEmbed(st, games, uptime, icon, name, auth, meta)
 }
 
 func (b *Bot) cmdLibrary(s *discordgo.Session, i *discordgo.InteractionCreate, mode string) {
-	games, err := b.info.Games()
+	games, meta, err := b.info.Games()
 	if err != nil {
 		b.fail(s, i, "failed to read the library: "+err.Error())
 		return
 	}
-	b.edit(s, i, libraryEmbed(games, mode, 0))
+	b.edit(s, i, libraryEmbed(games, mode, 0, meta))
 }
 
 func (b *Bot) cmdGame(s *discordgo.Session, i *discordgo.InteractionCreate, name string) {
-	games, err := b.info.Games()
+	games, meta, err := b.info.Games()
 	if err != nil {
 		b.fail(s, i, err.Error())
 		return
@@ -164,7 +165,9 @@ func (b *Bot) cmdGame(s *discordgo.Session, i *discordgo.InteractionCreate, name
 		return
 	}
 	playtime, starts := b.playtimeOf(g.TitleID)
-	b.edit(s, i, gameEmbed(g, playtime, starts, b.iconForTitle(g.TitleID), b.author()))
+	icon, _ := b.iconForTitle(g.TitleID)
+	auth, _ := b.author()
+	b.edit(s, i, gameEmbed(g, playtime, starts, icon, auth, meta))
 }
 
 func (b *Bot) playtimeOf(titleID string) (string, int) {
@@ -176,16 +179,16 @@ func (b *Bot) playtimeOf(titleID string) (string, int) {
 }
 
 func (b *Bot) cmdRecent(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	games, err := b.info.Games()
+	games, meta, err := b.info.Games()
 	if err != nil {
 		b.fail(s, i, err.Error())
 		return
 	}
-	b.edit(s, i, recentEmbed(games))
+	b.edit(s, i, recentEmbed(games, meta))
 }
 
 func (b *Bot) cmdShot(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	name, data, err := b.info.LatestScreenshot()
+	name, data, _, err := b.info.LatestScreenshot()
 	if err != nil {
 		b.fail(s, i, "no screenshots or clips found")
 		return
@@ -203,17 +206,18 @@ func (b *Bot) cmdTrophy(s *discordgo.Session, i *discordgo.InteractionCreate, op
 	b.defer_(s, i)
 	game := optString(opts, "game")
 	filter := optString(opts, "filter")
-	title, err := b.info.FindTitle(game)
+	title, meta, err := b.info.FindTitle(game)
 	if err != nil {
 		b.fail(s, i, "no trophies found for: "+game)
 		return
 	}
-	trophies, err := b.info.Trophies(title.CommID)
+	trophies, trophyMeta, err := b.info.Trophies(title.CommID)
 	if err != nil {
 		b.fail(s, i, err.Error())
 		return
 	}
-	b.edit(s, i, trophyEmbed(title, trophies, filter, 0, b.iconForName(title.Name)))
+	icon, _ := b.iconForName(title.Name)
+	b.edit(s, i, trophyEmbed(title, trophies, filter, 0, icon, meta.Merge(trophyMeta)))
 }
 
 func (b *Bot) handleAutocomplete(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -227,12 +231,12 @@ func (b *Bot) handleAutocomplete(s *discordgo.Session, i *discordgo.InteractionC
 
 	var choices []*discordgo.ApplicationCommandOptionChoice
 	if data.Name == "trophy" {
-		titles, _ := b.info.SearchTitles(focused, 25)
+		titles, _, _ := b.info.SearchTitles(focused, 25)
 		for _, t := range titles {
 			choices = append(choices, &discordgo.ApplicationCommandOptionChoice{Name: truncate(t.Name, 100), Value: t.Name})
 		}
 	} else {
-		games, _ := b.info.Games()
+		games, _, _ := b.info.GamesCached()
 		f := strings.ToLower(focused)
 		for _, g := range games {
 			if f == "" || strings.Contains(strings.ToLower(g.Name), f) {
@@ -259,16 +263,17 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 	switch parts[0] {
 	case "lib":
 		mode, page := parts[1], atoiSafe(parts[2])
-		games, _ := b.info.Games()
-		r = libraryEmbed(games, mode, page)
+		games, meta, _ := b.info.Games()
+		r = libraryEmbed(games, mode, page, meta)
 	case "trp":
 		comm, filter, page := parts[1], parts[2], atoiSafe(parts[3])
 		title, err := b.findTitleByComm(comm)
 		if err != nil {
 			return
 		}
-		trophies, _ := b.info.Trophies(comm)
-		r = trophyEmbed(title, trophies, filter, page, b.iconForName(title.Name))
+		trophies, meta, _ := b.info.Trophies(comm)
+		icon, _ := b.iconForName(title.Name)
+		r = trophyEmbed(title, trophies, filter, page, icon, meta)
 	default:
 		return
 	}
@@ -276,7 +281,7 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 }
 
 func (b *Bot) findTitleByComm(comm string) (ps4.TrophyTitle, error) {
-	titles, err := b.info.TrophyTitles()
+	titles, _, err := b.info.TrophyTitles()
 	if err != nil {
 		return ps4.TrophyTitle{}, err
 	}

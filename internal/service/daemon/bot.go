@@ -8,17 +8,17 @@ import (
 type BotStatus struct {
 	Running  bool   `json:"running"`
 	HasToken bool   `json:"has_token"`
-	GuildID  string `json:"guild_id"`
 	Err      string `json:"err,omitempty"`
 }
 
 type botDaemon struct {
 	logs *logbuf
 
-	cfg     *config.Config
-	bot     *bot.Bot
-	applied config.Bot
-	err     string
+	cfg          *config.Config
+	bot          *bot.Bot
+	applied      config.Bot
+	appliedCache config.Cache
+	err          string
 }
 
 func RunBot() error {
@@ -31,7 +31,6 @@ func (b *botDaemon) status() any {
 	return BotStatus{
 		Running:  b.bot != nil,
 		HasToken: b.cfg.Bot.Token != "",
-		GuildID:  b.cfg.Bot.GuildID,
 		Err:      b.err,
 	}
 }
@@ -41,9 +40,10 @@ func (b *botDaemon) reload(cfg *config.Config) {
 	want := Wanted(cfg, RoleBot)
 	key := cfg.Bot
 	key.Enabled = true
+	cacheKey := cfg.Cache
 
 	switch {
-	case want && b.bot != nil && key != b.applied:
+	case want && b.bot != nil && (key != b.applied || cacheKey != b.appliedCache):
 		b.logs.printf("bot: settings changed, restarting")
 		b.stop()
 		b.start()
@@ -53,11 +53,12 @@ func (b *botDaemon) reload(cfg *config.Config) {
 		b.stop()
 	}
 	b.applied = key
+	b.appliedCache = cacheKey
 }
 
 func (b *botDaemon) start() {
 	b.err = ""
-	instance, err := bot.New(b.cfg.Bot, b.cfg.Core.IP)
+	instance, err := bot.New(b.cfg.Bot, b.cfg.Cache, b.cfg.Core.IP)
 	if err != nil {
 		b.fail(err)
 		return
