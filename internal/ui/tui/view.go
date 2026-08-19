@@ -122,23 +122,33 @@ func (m *Model) viewDashboard() string {
 	if cardW < 18 {
 		cardW = 18
 	}
+	lastW := m.contentWidth() - 6 - 2*cardW
+	if lastW < cardW {
+		lastW = cardW
+	}
 
-	ps4Card := m.card(cardW, "PlayStation 4", []string{
-		styleLabel.Render("address ") + styleValue.Render(ip),
-		styleLabel.Render("status  ") + upDown(m.ps4Online, "online", "not found"),
-	})
 	gameName := st.GameName
 	if gameName == "" {
 		gameName = "-"
 	}
-	rpcCard := m.card(cardW, "Rich Presence", []string{
+
+	ps4Lines := []string{
+		styleLabel.Render("address ") + styleValue.Render(ip),
+		styleLabel.Render("status  ") + upDown(m.ps4Online, "online", "not found"),
+	}
+	rpcLines := []string{
 		styleLabel.Render("service ") + upDown(st.Running, "running", "stopped"),
-		styleLabel.Render("game    ") + styleValue.Render(trunc(gameName, cardW-9)),
-	})
-	botCard := m.card(cardW, "Discord bot", []string{
+		styleLabel.Render("game    ") + styleValue.Render(trunc(gameName, cardW-12)),
+	}
+	botLines := []string{
 		styleLabel.Render("service ") + upDown(m.botStatus.Running, "running", "stopped"),
 		styleLabel.Render("token   ") + onOff(m.cfg.Bot.Token != ""),
-	})
+	}
+
+	cardH := max(len(ps4Lines), max(len(rpcLines), len(botLines)))
+	ps4Card := m.card(cardW, cardH, "PlayStation 4", ps4Lines)
+	rpcCard := m.card(cardW, cardH, "Rich Presence", rpcLines)
+	botCard := m.card(lastW, cardH, "Discord bot", botLines)
 
 	cards := lipgloss.JoinHorizontal(lipgloss.Top, ps4Card, rpcCard, botCard)
 
@@ -154,7 +164,10 @@ func (m *Model) viewDashboard() string {
 	return cards + "\n" + logs
 }
 
-func (m *Model) card(w int, title string, lines []string) string {
+func (m *Model) card(w, h int, title string, lines []string) string {
+	for len(lines) < h {
+		lines = append(lines, "")
+	}
 	body := stylePanelTitle.Render(title) + "\n" + strings.Join(lines, "\n")
 	return stylePanel.Width(w).Render(body)
 }
