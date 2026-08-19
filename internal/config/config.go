@@ -54,6 +54,7 @@ type Var struct {
 	IP       string
 	ClientID int64
 	WaitTime int
+	Enabled  bool
 }
 
 type DevApp struct {
@@ -66,6 +67,7 @@ type Bot struct {
 	OwnerID   string
 	GuildID   string
 	AccountID string
+	Enabled   bool
 }
 
 type Mapped struct {
@@ -86,6 +88,7 @@ func Default() *Config {
 		Var: Var{
 			ClientID: 858345055966461973,
 			WaitTime: 30,
+			Enabled:  true,
 		},
 		Devapps: []DevApp{{}},
 		Mapped:  []Mapped{},
@@ -163,6 +166,7 @@ func (c *Config) applyRpc(t *lua.LTable) {
 	v := &c.Var
 	v.ClientID = luaInt64(t, "client_id", v.ClientID)
 	v.WaitTime = luaInt(t, "wait_time", v.WaitTime)
+	v.Enabled = luaBool(t, "enabled", v.Enabled)
 }
 
 func (c *Config) applyBot(t *lua.LTable) {
@@ -174,6 +178,7 @@ func (c *Config) applyBot(t *lua.LTable) {
 	b.OwnerID = luaStr(t, "owner_id", b.OwnerID)
 	b.GuildID = luaStr(t, "guild_id", b.GuildID)
 	b.AccountID = luaStr(t, "account_id", b.AccountID)
+	b.Enabled = luaBool(t, "enabled", b.Enabled)
 }
 
 func (c *Config) applyDev(t *lua.LTable) {
@@ -251,6 +256,7 @@ func (c *Config) renderRpc() string {
 	b.WriteString("return {\n")
 	fmt.Fprintf(&b, "    client_id = %q,\n", strconv.FormatInt(c.Var.ClientID, 10))
 	fmt.Fprintf(&b, "    wait_time = %d,\n", c.Var.WaitTime)
+	fmt.Fprintf(&b, "    enabled = %t,\n", c.Var.Enabled)
 	b.WriteString("}\n")
 	return b.String()
 }
@@ -262,6 +268,7 @@ func (c *Config) renderBot() string {
 	fmt.Fprintf(&b, "    owner_id = %s,\n", luaString(c.Bot.OwnerID))
 	fmt.Fprintf(&b, "    guild_id = %s,\n", luaString(c.Bot.GuildID))
 	fmt.Fprintf(&b, "    account_id = %s,\n", luaString(c.Bot.AccountID))
+	fmt.Fprintf(&b, "    enabled = %t,\n", c.Bot.Enabled)
 	b.WriteString("}\n")
 	return b.String()
 }
@@ -320,6 +327,18 @@ func luaStr(t *lua.LTable, key, def string) string {
 	return lua.LVAsString(v)
 }
 
+func luaBool(t *lua.LTable, key string, def bool) bool {
+	switch val := t.RawGetString(key).(type) {
+	case lua.LBool:
+		return bool(val)
+	case lua.LString:
+		if b, err := strconv.ParseBool(strings.TrimSpace(string(val))); err == nil {
+			return b
+		}
+	}
+	return def
+}
+
 func luaInt(t *lua.LTable, key string, def int) int {
 	return int(luaInt64(t, key, int64(def)))
 }
@@ -335,4 +354,42 @@ func luaInt64(t *lua.LTable, key string, def int64) int64 {
 		}
 	}
 	return def
+}
+
+func (c *Config) Clone() *Config {
+	out := *c
+	out.Devapps = append([]DevApp(nil), c.Devapps...)
+	out.Mapped = append([]Mapped(nil), c.Mapped...)
+	return &out
+}
+
+func (c *Config) Equal(o *Config) bool {
+	if o == nil || c.Var != o.Var || c.Bot != o.Bot ||
+		len(c.Devapps) != len(o.Devapps) || len(c.Mapped) != len(o.Mapped) {
+		return false
+	}
+	for i := range c.Devapps {
+		if c.Devapps[i] != o.Devapps[i] {
+			return false
+		}
+	}
+	for i := range c.Mapped {
+		if c.Mapped[i] != o.Mapped[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func Fingerprint() string {
+	var b strings.Builder
+	for _, p := range []string{Path, RpcPath, BotPath, DevPath, MappedPath} {
+		fi, err := os.Stat(p)
+		if err != nil {
+			b.WriteString(p + ":-;")
+			continue
+		}
+		fmt.Fprintf(&b, "%s:%d:%d;", p, fi.Size(), fi.ModTime().UnixNano())
+	}
+	return b.String()
 }

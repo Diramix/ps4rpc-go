@@ -36,30 +36,32 @@ func dial(ip string) (*ftp.ServerConn, error) {
 }
 
 func TestForPS4(ip string) bool {
+	ok, msg := CheckPS4(ip)
+	fmt.Println(msg)
+	return ok
+}
+
+func CheckPS4(ip string) (bool, string) {
+	const prefix = "TestForPS4():    "
 	c, err := dial(ip)
 	if err != nil {
-		fmt.Printf("TestForPS4():     No FTP server found on '%s'. '%v'.\n", ip, err)
-		return false
+		return false, fmt.Sprintf("%s No FTP server found on '%s'. '%v'.", prefix, ip, err)
 	}
 	defer c.Quit()
 	if err := c.Login("anonymous", "anonymous"); err != nil {
-		fmt.Printf("TestForPS4():     login failed on '%s'. '%v'.\n", ip, err)
-		return false
+		return false, fmt.Sprintf("%s login failed on '%s'. '%v'.", prefix, ip, err)
 	}
 	entries, err := c.NameList("/mnt/sandbox")
 	if err != nil {
-		fmt.Printf("TestForPS4():     No /mnt/sandbox on '%s'. '%v'.\n", ip, err)
-		return false
+		return false, fmt.Sprintf("%s No /mnt/sandbox on '%s'. '%v'.", prefix, ip, err)
 	}
 	for _, e := range entries {
 		base := e[strings.LastIndex(e, "/")+1:]
 		if strings.HasPrefix(base, "NPXS20001_") {
-			fmt.Printf("TestForPS4():     PS4 found on '%s'\n", ip)
-			return true
+			return true, fmt.Sprintf("%s PS4 found on '%s'", prefix, ip)
 		}
 	}
-	fmt.Printf("TestForPS4():     NPXS20001 (shell UI) sandbox not found on '%s'.\n", ip)
-	return false
+	return false, fmt.Sprintf("%s NPXS20001 (shell UI) sandbox not found on '%s'.", prefix, ip)
 }
 
 func GetTitleID(ip string) (titleID, gameType string, ok bool) {
@@ -107,9 +109,13 @@ func PromptUser() string {
 	fmt.Println("Get PS4's IP address Automatically or Manually?")
 	for {
 		fmt.Print("Please enter either 'a' or 'm': ")
-		line, _ := reader.ReadString('\n')
+		line, err := reader.ReadString('\n')
 		line = strings.TrimSpace(strings.ToLower(line))
 		if line == "" {
+			if err != nil {
+				fmt.Println("\nNo input available. Set the PS4 IP in the config or run the TUI.")
+				return ""
+			}
 			continue
 		}
 		switch line[0] {
@@ -128,9 +134,13 @@ func GetIPFromUser() string {
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Print("Please enter the PS4's IP address: ")
-		line, _ := reader.ReadString('\n')
+		line, err := reader.ReadString('\n')
 		ip := strings.TrimSpace(line)
 		if ip == "" {
+			if err != nil {
+				fmt.Println("\nNo input available. Set the PS4 IP in the config or run the TUI.")
+				return ""
+			}
 			continue
 		}
 		if net.ParseIP(ip) == nil {

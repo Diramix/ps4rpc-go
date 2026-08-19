@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"strconv"
 	"time"
 )
+
+const handshakeTimeout = 5 * time.Second
 
 const (
 	opHandshake = 0
@@ -34,6 +37,7 @@ func Connect(clientID string) (*Client, error) {
 		return nil, err
 	}
 	c := &Client{conn: conn}
+	_ = conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	payload, _ := json.Marshal(map[string]any{"v": 1, "client_id": clientID})
 	if err := c.send(opHandshake, payload); err != nil {
 		conn.Close()
@@ -43,6 +47,7 @@ func Connect(clientID string) (*Client, error) {
 		conn.Close()
 		return nil, err
 	}
+	_ = conn.SetDeadline(time.Time{})
 	return c, nil
 }
 
@@ -137,13 +142,28 @@ func readFull(conn net.Conn, buf []byte) (int, error) {
 }
 
 func ConnectRetry(clientID string) *Client {
+	c, _ := ConnectRetryCtx(context.Background(), clientID, nil)
+	return c
+}
+
+func ConnectRetryCtx(ctx context.Context, clientID string, logf func(string, ...any)) (*Client, error) {
+	if logf == nil {
+		logf = func(format string, args ...any) { fmt.Printf(format+"\n", args...) }
+	}
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		c, err := Connect(clientID)
 		if err == nil {
-			fmt.Println("Connected to Discord client")
-			return c
+			logf("Connected to Discord client")
+			return c, nil
 		}
-		fmt.Printf("! Could not find Discord running. '%v'.\n", err)
-		time.Sleep(20 * time.Second)
+		logf("! Could not find Discord running. '%v'.", err)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(20 * time.Second):
+		}
 	}
 }

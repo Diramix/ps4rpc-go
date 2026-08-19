@@ -1,27 +1,26 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"runtime/debug"
-	"strconv"
+	"syscall"
 	"time"
 
 	"ps4rpc/internal/cli"
 	"ps4rpc/internal/config"
-	"ps4rpc/internal/discord"
 	"ps4rpc/internal/ps4"
-	"ps4rpc/internal/tmdb"
+	"ps4rpc/internal/rpcsvc"
+	"ps4rpc/internal/tui"
 )
 
 var version = "dev"
 
-var (
-	cfg *config.Config
-	rpc *discord.Client
-)
+var cfg *config.Config
 
 func resolveVersion() string {
 	if version != "dev" {
@@ -45,6 +44,7 @@ func resolveVersion() string {
 
 func main() {
 	version = resolveVersion()
+	headless := false
 	for _, arg := range os.Args[1:] {
 		switch arg {
 		case "--version", "-v":
@@ -56,44 +56,49 @@ func main() {
 		case "--config", "-c":
 			openConfigDir()
 			return
+		case "--headless", "-headless":
+			headless = true
 		}
 	}
 
+	if !headless && tui.IsTTY() {
+		runTUI()
+		return
+	}
+	runHeadless()
+}
+
+func runTUI() {
+	config.SetDir(config.DefaultDir())
+	c, existed, err := config.Load()
+	if err != nil {
+		fmt.Printf("config: %v\n", err)
+	}
+	cfg = c
+
+	startTab := 0
+	if !existed || cfg.Var.IP == "" {
+		_ = cfg.Save()
+		startTab = 1
+	}
+
+	if err := tui.Run(cfg, version, startTab); err != nil {
+		fmt.Printf("tui: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runHeadless() {
 	readConfig()
-	rpc = discord.ConnectRetry(clientID(cfg.Var.ClientID))
-
-	prevTitleID := ""
-	devAppChanged := false
-	for {
-		titleID, gameType, ok := ps4.GetTitleID(cfg.Var.IP)
-		if !ok {
-			fmt.Println("get_title_id():  PS4 not found, sleeping")
-			for !ps4.TestForPS4(cfg.Var.IP) {
-				sleepFor()
-			}
-			continue
-		}
-		fmt.Printf("get_title_id():  (%q, %q)\n", titleID, gameType)
-
-		if prevTitleID == titleID {
-			fmt.Println("reusing previous presence data")
-		} else {
-			name, image := checkMapped(titleID, gameType)
-			prevTitleID = titleID
-
-			devAppChanged = changeDevApp(titleID, devAppChanged)
-
-			if titleID == "main_menu" {
-				_ = rpc.Clear()
-			} else {
-				_ = rpc.Close()
-				rpc = discord.ConnectRetry(clientID(cfg.Var.ClientID))
-				updatePresence(name, image, titleID)
-			}
-		}
-		fmt.Println()
-		time.Sleep(time.Duration(cfg.Var.WaitTime) * time.Second)
+	if cfg.Var.IP == "" {
+		fmt.Println("readConfig():   no PS4 IP configured, nothing to do")
+		os.Exit(1)
 	}
+
+	svc := rpcsvc.New(cfg, nil)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	svc.Run(ctx)
 }
 
 func openConfigDir() {
@@ -136,72 +141,9 @@ func readConfig() {
 			_ = cfg.Save()
 		} else {
 			for !ps4.TestForPS4(cfg.Var.IP) {
-				fmt.Printf("readConfig():   ps4 sleeping on '%s', waiting %d seconds\n", cfg.Var.IP, sleepSeconds())
-				time.Sleep(time.Duration(sleepSeconds()) * time.Second)
+				fmt.Printf("readConfig():   ps4 sleeping on '%s', waiting %d seconds\n", cfg.Var.IP, cfg.Var.WaitTime)
+				time.Sleep(time.Duration(cfg.Var.WaitTime) * time.Second)
 			}
 		}
 	}
-}
-
-func checkMapped(titleID, gameType string) (name, image string) {
-	image = titleID
-	for _, m := range cfg.Mapped {
-		if m.TitleID == titleID {
-			fmt.Printf("check_mapped():  (%q, %q)\n", m.Name, m.Image)
-			return m.Name, m.Image
-		}
-	}
-	if titleID == "main_menu" {
-		return "", titleID
-	}
-
-	fmt.Println("check_mapped():  game has not been mapped yet.")
-	switch gameType {
-	case "PS4":
-		name, image = tmdb.GetPS4GameInfo(titleID)
-	case "PS1/2":
-		name, image = tmdb.GetClassicGameInfo(titleID)
-	default:
-		name, image = tmdb.GetOtherGameInfo(titleID)
-	}
-	_ = cfg.AppendMapped(config.Mapped{TitleID: titleID, Name: name, Image: image})
-	return name, image
-}
-
-func changeDevApp(titleID string, changed bool) bool {
-	for _, app := range cfg.Devapps {
-		if app.TitleID == titleID && app.TitleID != "" {
-			fmt.Println("change_dev_app():    changing to new developer app")
-			_ = rpc.Close()
-			rpc = discord.ConnectRetry(app.DevID)
-			return true
-		}
-	}
-	if changed {
-		fmt.Println("change_dev_app():    reverting to default developer app")
-		_ = rpc.Close()
-		rpc = discord.ConnectRetry(clientID(cfg.Var.ClientID))
-		return false
-	}
-	return changed
-}
-
-func updatePresence(name, image, titleID string) {
-	a := discord.Activity{LargeImage: image, LargeText: titleID, Name: name}
-	if err := rpc.Update(a); err != nil {
-		fmt.Printf("Error with Discord: %v\n", err)
-		rpc = discord.ConnectRetry(clientID(cfg.Var.ClientID))
-	}
-}
-
-func sleepSeconds() int {
-	return cfg.Var.WaitTime
-}
-
-func sleepFor() {
-	time.Sleep(time.Duration(cfg.Var.WaitTime) * time.Second)
-}
-
-func clientID(id int64) string {
-	return strconv.FormatInt(id, 10)
 }

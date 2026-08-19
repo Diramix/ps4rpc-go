@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -70,7 +71,7 @@ func GetPS4GameInfo(titleID string) (name, image string) {
 			return r.Names[0].Name, r.Icons[0].Icon
 		}
 	}
-	fmt.Printf("GetPS4GameInfo():     No entry found in TMDB for %s\n", titleID)
+	log.Printf("GetPS4GameInfo():     No entry found in TMDB for %s", titleID)
 	return titleID, strings.ToLower(titleID)
 }
 

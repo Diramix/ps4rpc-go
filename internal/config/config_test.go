@@ -66,6 +66,67 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
+func TestToggleDefaultsAndRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	SetDir(dir)
+
+	write := func(path, body string) {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(RpcPath, "return { wait_time = 10 }\n")
+	write(BotPath, "return {}\n")
+	write(DevPath, `return { { devid = "1", titleid = "CUSA1" } }`+"\n")
+	write(MappedPath, "return {}\n")
+	write(Path, `return {
+    var = { ip = "10.0.0.5" },
+    rpc = require("rpc"),
+    bot = require("bot"),
+    dev = require("dev"),
+    mapped = require("mapped"),
+}
+`)
+
+	cfg, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Var.Enabled {
+		t.Errorf("rpc should default to enabled: %+v", cfg.Var)
+	}
+	if cfg.Bot.Enabled {
+		t.Errorf("bot should default to disabled")
+	}
+	if len(cfg.Devapps) != 1 || cfg.Devapps[0].TitleID != "CUSA1" {
+		t.Errorf("dev app parsed wrong: %+v", cfg.Devapps)
+	}
+
+	rpcFile, err := os.ReadFile(RpcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"enabled ="} {
+		if !strings.Contains(string(rpcFile), key) {
+			t.Errorf("migrated rpc.lua missing %q\n%s", key, rpcFile)
+		}
+	}
+
+	cfg.Var.Enabled = false
+	cfg.Bot.Enabled = true
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg2, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.Var != cfg.Var || cfg2.Bot != cfg.Bot || cfg2.Devapps[0] != cfg.Devapps[0] {
+		t.Fatalf("toggle round-trip mismatch:\n%+v\n%+v", cfg, cfg2)
+	}
+}
+
 func TestMigrateAddsMissingFiles(t *testing.T) {
 	dir := t.TempDir()
 	SetDir(dir)
