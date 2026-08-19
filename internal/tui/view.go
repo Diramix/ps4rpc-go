@@ -32,7 +32,7 @@ func (m *Model) View() string {
 		return "loading…"
 	}
 	header, footer := m.header(), m.footer()
-	m.body = m.height - lineCount(header) - lineCount(footer) - 1
+	m.body = m.height - lineCount(header) - lineCount(footer)
 	if m.body < 3 {
 		m.body = 3
 	}
@@ -50,7 +50,7 @@ func (m *Model) View() string {
 	if pad := m.body - lineCount(body); pad > 0 {
 		body += strings.Repeat("\n", pad)
 	}
-	return header + "\n\n" + body + "\n" + footer
+	return header + "\n" + body + "\n" + footer
 }
 
 func (m *Model) header() string {
@@ -110,9 +110,9 @@ func (m *Model) footer() string {
 }
 
 func (m *Model) viewDashboard() string {
-	st := m.svc.Status()
+	st := m.rpcStatus
 
-	ip := m.cfg.Var.IP
+	ip := m.cfg.Core.IP
 	if ip == "" {
 		ip = "not set"
 	}
@@ -134,7 +134,7 @@ func (m *Model) viewDashboard() string {
 		styleLabel.Render("game    ") + styleValue.Render(trunc(gameName, cardW-9)),
 	})
 	botCard := m.card(cardW, "Discord bot", []string{
-		styleLabel.Render("service ") + upDown(m.botOnline, "running", "stopped"),
+		styleLabel.Render("service ") + upDown(m.botStatus.Running, "running", "stopped"),
 		styleLabel.Render("token   ") + onOff(m.cfg.Bot.Token != ""),
 	})
 
@@ -240,7 +240,7 @@ func (m *Model) viewSettings() string {
 func (m *Model) viewMappings() string {
 	var rows []string
 	if len(m.cfg.Mapped) == 0 {
-		rows = append(rows, styleHelp.Render("empty — press a to add"))
+		rows = append(rows, styleHelp.Render("empty - press a to add"))
 	}
 	for i, mp := range m.cfg.Mapped {
 		cells := []string{trunc(orDash(mp.TitleID), 16), trunc(orDash(mp.Name), 28), trunc(orDash(mp.Image), 24)}

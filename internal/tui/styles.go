@@ -10,6 +10,11 @@ var (
 	colOff    = lipgloss.AdaptiveColor{Light: "#b91c1c", Dark: "#f87171"}
 	colWarn   = lipgloss.AdaptiveColor{Light: "#b45309", Dark: "#fbbf24"}
 	colBorder = lipgloss.AdaptiveColor{Light: "#c7c7d1", Dark: "#3b3b4d"}
+
+	colBot     = lipgloss.AdaptiveColor{Light: "#1d4ed8", Dark: "#60a5fa"}
+	colDiscord = lipgloss.AdaptiveColor{Light: "#4338ca", Dark: "#818cf8"}
+	colPS4     = lipgloss.AdaptiveColor{Light: "#0369a1", Dark: "#38bdf8"}
+	colValue   = lipgloss.AdaptiveColor{Light: "#0f766e", Dark: "#5eead4"}
 )
 
 var (
@@ -47,20 +52,21 @@ var (
 	styleOff  = lipgloss.NewStyle().Bold(true).Foreground(colOff)
 	styleWarn = lipgloss.NewStyle().Foreground(colWarn)
 
+	styleLogTime   = lipgloss.NewStyle().Foreground(colBorder)
+	styleLogSource = lipgloss.NewStyle().Bold(true)
+	styleLogValue  = lipgloss.NewStyle().Foreground(colValue)
+
 	styleHelp   = lipgloss.NewStyle().Foreground(colSubtle)
 	styleStatus = lipgloss.NewStyle().Foreground(colSubtle).Padding(0, 1)
 )
 
 func onOff(v bool) string {
-	if v {
-		return styleOn.Render("● on")
-	}
-	return styleOff.Render("○ off")
+	return upDown(v, "on", "off")
 }
 
 func upDown(v bool, up, down string) string {
 	if v {
-		return styleOn.Render("● " + up)
+		return styleOn.Render(up)
 	}
-	return styleOff.Render("○ " + down)
+	return styleOff.Render(down)
 }
