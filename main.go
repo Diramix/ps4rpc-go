@@ -3,14 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"runtime"
 	"runtime/debug"
 
-	"ps4rpc/internal/cli"
-	"ps4rpc/internal/config"
-	"ps4rpc/internal/daemon"
-	"ps4rpc/internal/tui"
+	"ps4rpc/internal/service/daemon"
+	"ps4rpc/internal/ui/cli"
+	"ps4rpc/internal/ui/tui"
 )
 
 var version = "dev"
@@ -48,7 +45,7 @@ func main() {
 			cli.PrintHelp(os.Stdout, version)
 			return
 		case "--config", "-c":
-			openConfigDir()
+			cli.OpenConfigDir()
 			return
 		}
 	}
@@ -64,11 +61,11 @@ func main() {
 	case daemon.RoleBot:
 		exit(daemon.RunBot())
 	case "start":
-		exit(startDaemons())
+		exit(cli.Start())
 	case "stop":
-		exit(stopDaemons(args[1:]))
+		exit(cli.Stop(args[1:]))
 	case "status":
-		printStatus()
+		cli.PrintStatus(os.Stdout)
 	case "":
 		runTUI()
 	default:
@@ -84,71 +81,8 @@ func exit(err error) {
 	}
 }
 
-func startDaemons() error {
-	if _, err := loadConfig(); err != nil {
-		return err
-	}
-	if err := daemon.EnsureEnabled(); err != nil {
-		return err
-	}
-	printStatus()
-	return nil
-}
-
-func stopDaemons(roles []string) error {
-	if len(roles) == 0 {
-		roles = daemon.Roles
-	}
-	for _, role := range roles {
-		if err := daemon.Shutdown(role); err != nil {
-			return err
-		}
-		fmt.Println(cli.DoneLine(role, "stopped"))
-	}
-	return nil
-}
-
-func printStatus() {
-	if st, ok := daemon.PresenceState(); ok {
-		game := st.GameName
-		if game == "" {
-			game = "-"
-		}
-		fmt.Println(cli.StatusLine(daemon.RolePresence, st.Running, runState(st.Running),
-			cli.Flag("ps4", st.PS4Online), cli.Flag("discord", st.DiscordOK), cli.KV("game", game)))
-	} else {
-		fmt.Println(cli.StatusLine(daemon.RolePresence, false, "not running"))
-	}
-
-	if st, ok := daemon.BotState(); ok {
-		fmt.Println(cli.StatusLine(daemon.RoleBot, st.Running, runState(st.Running),
-			cli.Flag("token", st.HasToken)))
-	} else {
-		fmt.Println(cli.StatusLine(daemon.RoleBot, false, "not running"))
-	}
-}
-
-func runState(running bool) string {
-	if running {
-		return "running"
-	}
-	return "idle"
-}
-
-func loadConfig() (*config.Config, error) {
-	config.SetDir(config.DefaultDir())
-	c, existed, err := config.Load()
-	if err != nil {
-		return nil, fmt.Errorf("config: %w", err)
-	}
-	if !existed {
-		_ = c.Save()
-	}
-	return c, nil
-}
-
 func runTUI() {
-	cfg, err := loadConfig()
+	cfg, err := cli.LoadConfig()
 	if err != nil {
 		cli.Fail(os.Stderr, err)
 		os.Exit(1)
@@ -164,33 +98,11 @@ func runTUI() {
 	}
 
 	if !tui.IsTTY() {
-		printStatus()
+		cli.PrintStatus(os.Stdout)
 		return
 	}
 	if err := tui.Run(cfg, version, startTab); err != nil {
 		cli.Fail(os.Stderr, fmt.Errorf("tui: %w", err))
 		os.Exit(1)
-	}
-}
-
-func openConfigDir() {
-	dir := config.DefaultDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		cli.Fail(os.Stderr, err)
-		return
-	}
-	fmt.Println(dir)
-
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("explorer", dir)
-	case "darwin":
-		cmd = exec.Command("open", dir)
-	default:
-		cmd = exec.Command("xdg-open", dir)
-	}
-	if err := cmd.Start(); err != nil {
-		cli.Fail(os.Stderr, err)
 	}
 }
