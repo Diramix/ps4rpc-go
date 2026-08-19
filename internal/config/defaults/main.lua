@@ -1,5 +1,5 @@
 return {
-    var = {
+    core = {
         ip = "",
     },
     rpc = require("rpc"),

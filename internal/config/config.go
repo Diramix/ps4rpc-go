@@ -83,18 +83,6 @@ type Config struct {
 	Mapped  []Mapped
 }
 
-func Default() *Config {
-	return &Config{
-		Core: Core{
-			ClientID: 858345055966461973,
-			WaitTime: 30,
-			Enabled:  true,
-		},
-		Devapps: []DevApp{{}},
-		Mapped:  []Mapped{},
-	}
-}
-
 func Load() (*Config, bool, error) {
 	if _, err := os.Stat(Path); err != nil {
 		if os.IsNotExist(err) {
@@ -117,6 +105,7 @@ func Load() (*Config, bool, error) {
 	}
 
 	cfg := Default()
+	fallbackDevapps := cfg.Devapps
 	cfg.Devapps = nil
 	cfg.applyCore(coreTable(root))
 	cfg.applyRpc(tableField(root, "rpc"))
@@ -125,7 +114,7 @@ func Load() (*Config, bool, error) {
 	cfg.applyMapped(tableField(root, "mapped"))
 
 	if cfg.Devapps == nil {
-		cfg.Devapps = []DevApp{{}}
+		cfg.Devapps = fallbackDevapps
 	}
 
 	if err := cfg.migrate(); err != nil {

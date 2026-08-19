@@ -1,3 +1,0 @@
-local mapped = {}
-
-return mapped
