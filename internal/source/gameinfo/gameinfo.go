@@ -62,7 +62,7 @@ func GetPS4GameInfo(titleID string) (name, image string) {
 	mac := hmac.New(sha1.New, tmdbKey)
 	mac.Write([]byte(tid))
 	sum := strings.ToUpper(hex.EncodeToString(mac.Sum(nil)))
-	url := fmt.Sprintf("http://gameinfo.np.dl.playstation.net/tmdb2/%s_%s/%s.json", tid, sum, tid)
+	url := fmt.Sprintf("https://tmdb.np.dl.playstation.net/tmdb2/%s_%s/%s.json", tid, sum, tid)
 
 	body, ok := get(url)
 	if ok {

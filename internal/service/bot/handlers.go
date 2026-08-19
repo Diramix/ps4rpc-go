@@ -126,22 +126,37 @@ func (b *Bot) buildStatus() rendered {
 	var name string
 	var icon []byte
 
-	games, meta, _ := b.info.Games()
+	games, meta, err := b.info.Games()
+	if err != nil {
+		games, meta, _ = b.info.GamesCached()
+	}
 	if st.Online {
 		if d, err := b.info.Uptime(); err == nil {
 			uptime = humanDuration(d)
 		}
 	}
 	if st.State == ps4.StateGame {
-		for _, g := range games {
-			if g.TitleID == st.TitleID {
-				name = g.Name
-			}
-		}
+		name = b.nameForTitle(st.TitleID)
 		icon, _ = b.iconForTitle(st.TitleID)
 	}
 	auth, _ := b.author()
 	return statusEmbed(st, games, uptime, icon, name, auth, meta)
+}
+
+func (b *Bot) nameForTitle(titleID string) string {
+	lib, _, err := b.info.Library()
+	if err != nil {
+		lib, _, err = b.info.LibraryCached()
+		if err != nil {
+			return ""
+		}
+	}
+	for _, g := range lib {
+		if g.TitleID == titleID {
+			return g.Name
+		}
+	}
+	return ""
 }
 
 func (b *Bot) cmdLibrary(s *discordgo.Session, i *discordgo.InteractionCreate, mode string) {
