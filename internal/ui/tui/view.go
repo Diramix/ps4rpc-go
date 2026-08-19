@@ -22,7 +22,7 @@ func (m *Model) layout() {
 func lineCount(s string) int { return strings.Count(s, "\n") + 1 }
 
 func (m *Model) contentWidth() int {
-	w := m.width - 4
+	w := m.width
 	if w < 30 {
 		w = 30
 	}
