@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"ps4rpc/internal/app/config"
+	"ps4rpc/internal/service/history"
 	"ps4rpc/internal/source/discord"
 	"ps4rpc/internal/source/gameinfo"
 	"ps4rpc/internal/source/ps4"
@@ -25,24 +26,36 @@ type Service struct {
 	cfg  *config.Config
 	logf func(string, ...any)
 
-	mu     sync.Mutex
-	status Status
-	cancel context.CancelFunc
-	done   chan struct{}
-	rpc    *discord.Client
+	mu           sync.Mutex
+	status       Status
+	cancel       context.CancelFunc
+	done         chan struct{}
+	rpc          *discord.Client
+	sessionStart time.Time
+
+	curTitleID string
+	curName    string
+	curImage   string
+
+	connMu sync.Mutex
+
+	hist *history.Store
 }
 
 func New(cfg *config.Config, logf func(string, ...any)) *Service {
 	if logf == nil {
 		logf = func(format string, args ...any) { fmt.Printf(format+"\n", args...) }
 	}
-	return &Service{cfg: cfg.Clone(), logf: logf}
+	s := &Service{cfg: cfg.Clone(), logf: logf, hist: history.Open(logf)}
+	s.hist.SetIP(cfg.Core.IP)
+	return s
 }
 
 func (s *Service) SetConfig(cfg *config.Config) {
 	s.mu.Lock()
 	s.cfg = cfg.Clone()
 	s.mu.Unlock()
+	s.hist.SetIP(cfg.Core.IP)
 }
 
 func (s *Service) conf() *config.Config {
@@ -113,7 +126,11 @@ func (s *Service) run(ctx context.Context) {
 	}
 	s.setRPC(rpc)
 	defer s.closeRPC()
+	defer s.hist.EndCurrent()
+	defer s.setCurrent("", "", "")
 	s.setStatus(func(st *Status) { st.DiscordOK = true })
+
+	go s.watchDiscord(ctx)
 
 	prevTitleID := ""
 	devAppChanged := false
@@ -124,6 +141,8 @@ func (s *Service) run(ctx context.Context) {
 
 		titleID, gameType, ok := ps4.New(s.conf().Core.IP).TitleID()
 		if !ok {
+			s.hist.EndCurrent()
+			s.setCurrent("", "", "")
 			s.setStatus(func(st *Status) { st.PS4Online = false })
 			s.logf("ps4: console not found, sleeping")
 			for {
@@ -154,15 +173,21 @@ func (s *Service) run(ctx context.Context) {
 			devAppChanged = s.changeDevApp(ctx, titleID, devAppChanged)
 
 			if titleID == "main_menu" {
+				s.hist.EndCurrent()
+				s.setCurrent("", "", "")
 				_ = s.currentRPC().Clear()
 			} else {
+				sess := s.hist.EnsureSession(titleID, name)
+				s.sessionStart = sess.Start
+				s.setCurrent(titleID, name, image)
+
 				s.closeRPC()
 				c, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Core.ClientID), s.logf)
 				if err != nil {
 					return
 				}
 				s.setRPC(c)
-				s.updatePresence(ctx, name, image, titleID)
+				s.sendActivity(ctx, name, image, titleID)
 			}
 		}
 		if !s.sleep(ctx) {
@@ -182,6 +207,40 @@ func (s *Service) sleep(ctx context.Context) bool {
 	case <-time.After(time.Duration(wait) * time.Second):
 		return true
 	}
+}
+
+const discordWatchInterval = 15 * time.Second
+
+func (s *Service) watchDiscord(ctx context.Context) {
+	t := time.NewTicker(discordWatchInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		titleID, name, image, ok := s.currentGame()
+		if !ok {
+			continue
+		}
+		s.sendActivity(ctx, name, image, titleID)
+	}
+}
+
+func (s *Service) setCurrent(titleID, name, image string) {
+	s.mu.Lock()
+	s.curTitleID, s.curName, s.curImage = titleID, name, image
+	s.mu.Unlock()
+}
+
+func (s *Service) currentGame() (titleID, name, image string, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.curTitleID == "" || s.curTitleID == "main_menu" {
+		return "", "", "", false
+	}
+	return s.curTitleID, s.curName, s.curImage, true
 }
 
 func (s *Service) currentRPC() *discord.Client {
@@ -258,18 +317,26 @@ func (s *Service) changeDevApp(ctx context.Context, titleID string, changed bool
 	return changed
 }
 
-func (s *Service) updatePresence(ctx context.Context, name, image, titleID string) {
-	a := discord.Activity{LargeImage: image, LargeText: titleID, Name: name}
+func (s *Service) sendActivity(ctx context.Context, name, image, titleID string) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+
+	a := discord.Activity{LargeImage: image, LargeText: titleID, Name: name, Start: s.sessionStart.Unix()}
 	c := s.currentRPC()
-	if c == nil {
+	if c != nil && c.Update(a) == nil {
 		return
 	}
-	if err := c.Update(a); err != nil {
-		s.logf("Error with Discord: %v", err)
+	if c != nil {
+		s.logf("Error with Discord: connection lost, reconnecting")
 		s.closeRPC()
-		if n, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Core.ClientID), s.logf); err == nil {
-			s.setRPC(n)
-		}
+	}
+	n, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Core.ClientID), s.logf)
+	if err != nil {
+		return
+	}
+	s.setRPC(n)
+	if err := n.Update(a); err != nil {
+		s.logf("Error with Discord: %v", err)
 	}
 }
 

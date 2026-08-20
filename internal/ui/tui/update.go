@@ -64,6 +64,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case configMsg:
 		return m, m.onExternalConfig(msg.cfg)
 
+	case historyMsg:
+		if msg.err != nil {
+			m.historyErr = msg.err.Error()
+		} else {
+			m.historyErr = ""
+			m.history = msg.sessions
+		}
+		return m, nil
+
 	case tickMsg:
 		m.ticks++
 		m.refreshStatus()
@@ -72,6 +81,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setPS4Online(m.rpcStatus.PS4Online)
 		} else if m.ticks%probeEverySeconds == 0 {
 			cmds = append(cmds, m.probePS4())
+		}
+		if m.tabIdx == tabHistory && m.ticks%historyRefreshEverySeconds == 0 {
+			cmds = append(cmds, m.refreshHistory())
 		}
 		return m, tea.Batch(cmds...)
 
@@ -95,20 +107,23 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.Shutdown()
 		return m, tea.Quit
 	case "tab", "right":
-		m.tabIdx = (m.tabIdx + 1) % 3
-		return m, nil
+		m.tabIdx = (m.tabIdx + 1) % tabCount
+		return m, m.onTabChanged()
 	case "shift+tab", "left":
-		m.tabIdx = (m.tabIdx + 2) % 3
-		return m, nil
+		m.tabIdx = (m.tabIdx + tabCount - 1) % tabCount
+		return m, m.onTabChanged()
 	case "1":
 		m.tabIdx = tabDashboard
-		return m, nil
+		return m, m.onTabChanged()
 	case "2":
 		m.tabIdx = tabSettings
-		return m, nil
+		return m, m.onTabChanged()
 	case "3":
 		m.tabIdx = tabMappings
-		return m, nil
+		return m, m.onTabChanged()
+	case "4":
+		m.tabIdx = tabHistory
+		return m, m.onTabChanged()
 	}
 
 	switch m.tabIdx {
@@ -118,8 +133,35 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSettingsKey(msg)
 	case tabMappings:
 		return m.handleMappingsKey(msg)
+	case tabHistory:
+		return m.handleHistoryKey(msg)
 	}
 	return m, nil
+}
+
+func (m *Model) onTabChanged() tea.Cmd {
+	if m.tabIdx == tabHistory {
+		return m.refreshHistory()
+	}
+	return nil
+}
+
+func (m *Model) handleHistoryKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch keyName(msg) {
+	case "up", "k":
+		m.moveHistoryRow(-1)
+	case "down", "j":
+		m.moveHistoryRow(1)
+	}
+	return m, nil
+}
+
+func (m *Model) moveHistoryRow(delta int) {
+	n := len(m.history)
+	if n == 0 {
+		return
+	}
+	m.rowHistory = (m.rowHistory + delta + n) % n
 }
 
 func (m *Model) handleDashboardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

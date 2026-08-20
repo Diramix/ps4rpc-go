@@ -7,6 +7,7 @@ import (
 
 	"ps4rpc/internal/app/config"
 	"ps4rpc/internal/service/daemon"
+	"ps4rpc/internal/service/history"
 	"ps4rpc/internal/source/ps4"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -15,8 +16,9 @@ import (
 )
 
 const (
-	maxLogLines       = 500
-	probeEverySeconds = 10
+	maxLogLines                = 500
+	probeEverySeconds          = 10
+	historyRefreshEverySeconds = 5
 )
 
 type tab int
@@ -25,9 +27,12 @@ const (
 	tabDashboard tab = iota
 	tabSettings
 	tabMappings
+	tabHistory
 )
 
-var tabNames = []string{"Dashboard", "Settings", "Mapped"}
+var tabNames = []string{"Dashboard", "Settings", "Mapped", "History"}
+
+const tabCount = 4
 
 type logMsg string
 
@@ -59,6 +64,10 @@ type Model struct {
 
 	rowMapped int
 	col       int
+
+	history    []history.Session
+	rowHistory int
+	historyErr string
 
 	ticks     int
 	ps4Online bool
@@ -92,7 +101,7 @@ func New(cfg *config.Config, version string, startTab int) *Model {
 	}
 	m.cursor = m.firstSelectable()
 	m.fingerprint = config.Fingerprint()
-	if startTab >= 0 && startTab <= int(tabMappings) {
+	if startTab >= 0 && startTab <= int(tabHistory) {
 		m.tabIdx = tab(startTab)
 	}
 	redirectStdLog(logCh)
@@ -101,7 +110,20 @@ func New(cfg *config.Config, version string, startTab int) *Model {
 
 func (m *Model) Init() tea.Cmd {
 	m.refreshStatus()
-	return tea.Batch(m.listenLogs(), tickCmd(), m.probePS4(), m.ensureDaemons())
+	return tea.Batch(m.listenLogs(), tickCmd(), m.probePS4(), m.ensureDaemons(), m.refreshHistory())
+}
+
+type historyMsg struct {
+	sessions []history.Session
+	err      error
+}
+
+func (m *Model) refreshHistory() tea.Cmd {
+	ip := m.cfg.Core.IP
+	return func() tea.Msg {
+		sessions, err := history.Load(ip)
+		return historyMsg{sessions: sessions, err: err}
+	}
 }
 
 func (m *Model) listenLogs() tea.Cmd {

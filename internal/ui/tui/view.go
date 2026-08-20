@@ -2,7 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -47,6 +49,8 @@ func (m *Model) View() string {
 		body = m.viewSettings()
 	case tabMappings:
 		body = m.viewMappings()
+	case tabHistory:
+		body = m.viewHistory()
 	}
 
 	if pad := m.body - lineCount(body); pad > 0 {
@@ -71,11 +75,11 @@ func (m *Model) header() string {
 	badge := lipgloss.JoinHorizontal(lipgloss.Bottom, ver, title)
 	tabsBar := strings.Join(tabs, "")
 
+	bar := tabsBar
 	gap := m.contentWidth() - lipgloss.Width(tabsBar) - lipgloss.Width(badge)
-	if gap < 1 {
-		gap = 1
+	if gap >= 1 {
+		bar = tabsBar + strings.Repeat(" ", gap) + badge
 	}
-	bar := tabsBar + strings.Repeat(" ", gap) + badge
 
 	line := lipgloss.NewStyle().Foreground(theme.Border).
 		Render(strings.Repeat("─", max(1, m.contentWidth())))
@@ -99,6 +103,8 @@ func (m *Model) footer() string {
 		} else {
 			parts = append(parts, "↑↓ row", "h l column", "a add", "d delete", "enter edit")
 		}
+	case tabHistory:
+		parts = append(parts, "↑↓ row")
 	}
 	parts = append(parts, "tab switch", "q quit")
 	help := styleHelp.Width(m.contentWidth()).Render(strings.Join(parts, " · "))
@@ -288,6 +294,101 @@ func (m *Model) viewMappings() string {
 
 	body := stylePanelTitle.Render("▍Mapped games") + "\n" + strings.Join(rows, "\n")
 	return stylePanel.Width(m.contentWidth() - 2).Render(body)
+}
+
+func (m *Model) viewHistory() string {
+	var rows []string
+	switch {
+	case m.historyErr != "":
+		rows = append(rows, styleOff.Render("✗ console unreachable: "+m.historyErr))
+	case len(m.history) == 0:
+		rows = append(rows, styleHelp.Render("empty - no sessions recorded yet"))
+	default:
+		for i := len(m.history) - 1; i >= 0; i-- {
+			s := m.history[i]
+			status := formatDuration(s.Duration())
+			if s.Open() {
+				status += " (ongoing)"
+			}
+			cells := []string{
+				trunc(orDash(s.GameName), 28),
+				s.Start.Local().Format(systemDateTimeLayout()),
+				status,
+			}
+			rows = append(rows, m.renderHistoryRow(len(m.history)-1-i, cells))
+		}
+	}
+	rows = window(rows, m.rowHistory, m.bodyHeight()-1)
+
+	body := m.historyHeader() + "\n" + strings.Join(rows, "\n")
+	return stylePanel.Width(m.contentWidth() - 2).Render(body)
+}
+
+var historyColWidths = []int{28, 20, 20}
+
+func (m *Model) historyHeader() string {
+	cells := []string{"Game", "Date", "Duration"}
+	var parts []string
+	for i, c := range cells {
+		parts = append(parts, padVisible(styleLabel.Render(c), historyColWidths[i]))
+	}
+	return "  " + strings.Join(parts, " ")
+}
+
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	h := d / time.Hour
+	d -= h * time.Hour
+	mnt := d / time.Minute
+	d -= mnt * time.Minute
+	sec := d / time.Second
+	if h > 0 {
+		return fmt.Sprintf("%dh %dm %ds", h, mnt, sec)
+	}
+	if mnt > 0 {
+		return fmt.Sprintf("%dm %ds", mnt, sec)
+	}
+	return fmt.Sprintf("%ds", sec)
+}
+
+func systemDateTimeLayout() string {
+	loc := strings.ToLower(firstNonEmpty(os.Getenv("LC_TIME"), os.Getenv("LC_ALL"), os.Getenv("LANG")))
+	lang, _, _ := strings.Cut(loc, ".")
+	switch lang {
+	case "en_us", "en_ca", "en_ph":
+		return "01/02/2006 03:04 PM"
+	case "ja_jp", "zh_cn", "zh_tw", "zh_hk", "ko_kr":
+		return "2006/01/02 15:04"
+	default:
+		return "02.01.2006 15:04"
+	}
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func (m *Model) renderHistoryRow(idx int, cells []string) string {
+	active := m.rowHistory == idx
+
+	var parts []string
+	for c, cell := range cells {
+		text := cell
+		if active && c == 0 {
+			text = styleRowActive.Render(stripPad(cell))
+		}
+		parts = append(parts, padVisible(text, historyColWidths[c]))
+	}
+	prefix := "  "
+	if active {
+		prefix = styleRowActive.Render("▸ ")
+	}
+	return prefix + strings.Join(parts, " ")
 }
 
 func (m *Model) renderRow(idx int, cells []string) string {
