@@ -67,6 +67,13 @@ func discordDate(t time.Time) string {
 	return fmt.Sprintf("<t:%d:d>", t.Unix())
 }
 
+func discordTime(t time.Time) string {
+	if t.IsZero() || t.Year() <= 1 {
+		return "-"
+	}
+	return fmt.Sprintf("<t:%d:t>", t.Unix())
+}
+
 func elapsed(t time.Time) string {
 	if t.IsZero() || t.Year() <= 1 {
 		return "-"

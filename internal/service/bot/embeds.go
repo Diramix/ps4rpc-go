@@ -300,7 +300,7 @@ func historyEmbed(sessions []history.Session, game, order string, count int) ren
 		if sess.Open() {
 			status += " (ongoing)"
 		}
-		fmt.Fprintf(&sb, "**%s**\n%s · %s\n\n", sess.GameName, discordDate(sess.Start), status)
+		fmt.Fprintf(&sb, "**%s**\n%s %s · %s\n\n", sess.GameName, discordDate(sess.Start), discordTime(sess.Start), status)
 	}
 	if sb.Len() == 0 {
 		sb.WriteString("no data")
