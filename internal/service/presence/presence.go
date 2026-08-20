@@ -119,16 +119,17 @@ func (s *Service) Run(ctx context.Context) {
 	s.run(ctx)
 }
 
+func (s *Service) rpcEnabled() bool    { return s.conf().Core.Enabled }
+func (s *Service) recordHistory() bool { return s.conf().Core.RecordHistory }
+
 func (s *Service) run(ctx context.Context) {
-	rpc, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Core.ClientID), s.logf)
-	if err != nil {
-		return
-	}
-	s.setRPC(rpc)
 	defer s.closeRPC()
-	defer s.hist.EndCurrent()
+	defer func() {
+		if s.recordHistory() {
+			s.hist.EndCurrent()
+		}
+	}()
 	defer s.setCurrent("", "", "")
-	s.setStatus(func(st *Status) { st.DiscordOK = true })
 
 	go s.watchDiscord(ctx)
 
@@ -141,7 +142,9 @@ func (s *Service) run(ctx context.Context) {
 
 		titleID, gameType, ok := ps4.New(s.conf().Core.IP).TitleID()
 		if !ok {
-			s.hist.EndCurrent()
+			if s.recordHistory() {
+				s.hist.EndCurrent()
+			}
 			s.setCurrent("", "", "")
 			s.setStatus(func(st *Status) { st.PS4Online = false })
 			s.logf("ps4: console not found, sleeping")
@@ -170,24 +173,38 @@ func (s *Service) run(ctx context.Context) {
 			prevTitleID = titleID
 			s.setStatus(func(st *Status) { st.GameName = name })
 
-			devAppChanged = s.changeDevApp(ctx, titleID, devAppChanged)
+			if s.rpcEnabled() {
+				devAppChanged = s.changeDevApp(ctx, titleID, devAppChanged)
+			}
 
 			if titleID == "main_menu" {
-				s.hist.EndCurrent()
+				if s.recordHistory() {
+					s.hist.EndCurrent()
+				}
 				s.setCurrent("", "", "")
-				_ = s.currentRPC().Clear()
+				if s.rpcEnabled() {
+					if c := s.currentRPC(); c != nil {
+						_ = c.Clear()
+					}
+				}
 			} else {
-				sess := s.hist.EnsureSession(titleID, name)
-				s.sessionStart = sess.Start
+				sessionStart := time.Now()
+				if s.recordHistory() {
+					sess := s.hist.EnsureSession(titleID, name)
+					sessionStart = sess.Start
+				}
+				s.sessionStart = sessionStart
 				s.setCurrent(titleID, name, image)
 
-				s.closeRPC()
-				c, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Core.ClientID), s.logf)
-				if err != nil {
-					return
+				if s.rpcEnabled() {
+					s.closeRPC()
+					c, err := discord.ConnectRetryCtx(ctx, clientID(s.conf().Core.ClientID), s.logf)
+					if err != nil {
+						return
+					}
+					s.setRPC(c)
+					s.sendActivity(ctx, name, image, titleID)
 				}
-				s.setRPC(c)
-				s.sendActivity(ctx, name, image, titleID)
 			}
 		}
 		if !s.sleep(ctx) {
@@ -219,6 +236,9 @@ func (s *Service) watchDiscord(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		}
+		if !s.rpcEnabled() {
+			continue
 		}
 		titleID, name, image, ok := s.currentGame()
 		if !ok {

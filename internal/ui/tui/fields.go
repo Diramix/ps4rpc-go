@@ -54,13 +54,20 @@ func settingsFields() []field {
 			toggle:  func(c *config.Config) { c.Core.Autostart = !c.Core.Autostart },
 		},
 
-		{kind: fieldSection, label: "Rich Presence"},
+		{kind: fieldSection, label: "Activity"},
 		{
 			kind:    fieldToggle,
-			label:   "RPC enabled",
-			help:    "Start the presence loop",
+			label:   "Rich Presence",
+			help:    "Show Rich Presence in Discord",
 			getBool: func(c *config.Config) bool { return c.Core.Enabled },
 			toggle:  func(c *config.Config) { c.Core.Enabled = !c.Core.Enabled },
+		},
+		{
+			kind:    fieldToggle,
+			label:   "Record history",
+			help:    "Save session history to the console",
+			getBool: func(c *config.Config) bool { return c.Core.RecordHistory },
+			toggle:  func(c *config.Config) { c.Core.RecordHistory = !c.Core.RecordHistory },
 		},
 		{
 			kind:  fieldText,

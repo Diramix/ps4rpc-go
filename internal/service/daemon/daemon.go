@@ -83,7 +83,7 @@ func ensure(role string) error {
 func Wanted(cfg *config.Config, role string) bool {
 	switch role {
 	case RolePresence:
-		return cfg.Core.Enabled && cfg.Core.IP != ""
+		return (cfg.Core.Enabled || cfg.Core.RecordHistory) && cfg.Core.IP != ""
 	case RoleBot:
 		return cfg.Bot.Enabled && cfg.Bot.Token != "" && cfg.Core.IP != ""
 	}

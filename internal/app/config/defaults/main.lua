@@ -3,7 +3,7 @@ return {
         ip = "",
         autostart = true,
     },
-    rpc = require("rpc"),
+    activity = require("activity"),
     bot = require("bot"),
     cache = require("cache"),
     dev = require("dev"),

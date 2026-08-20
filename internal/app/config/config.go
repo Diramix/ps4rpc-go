@@ -14,13 +14,13 @@ import (
 )
 
 var (
-	Dir        = "config"
-	Path       = filepath.Join(Dir, "main.lua")
-	RpcPath    = filepath.Join(Dir, "rpc.lua")
-	BotPath    = filepath.Join(Dir, "bot.lua")
-	DevPath    = filepath.Join(Dir, "dev.lua")
-	MappedPath = filepath.Join(Dir, "mapped.lua")
-	CachePath  = filepath.Join(Dir, "cache.lua")
+	Dir          = "config"
+	Path         = filepath.Join(Dir, "main.lua")
+	ActivityPath = filepath.Join(Dir, "activity.lua")
+	BotPath      = filepath.Join(Dir, "bot.lua")
+	DevPath      = filepath.Join(Dir, "dev.lua")
+	MappedPath   = filepath.Join(Dir, "mapped.lua")
+	CachePath    = filepath.Join(Dir, "cache.lua")
 )
 
 func DataDir() string {
@@ -51,7 +51,7 @@ func CacheDir() string {
 func SetDir(dir string) {
 	Dir = dir
 	Path = filepath.Join(Dir, "main.lua")
-	RpcPath = filepath.Join(Dir, "rpc.lua")
+	ActivityPath = filepath.Join(Dir, "activity.lua")
 	BotPath = filepath.Join(Dir, "bot.lua")
 	DevPath = filepath.Join(Dir, "dev.lua")
 	MappedPath = filepath.Join(Dir, "mapped.lua")
@@ -59,11 +59,12 @@ func SetDir(dir string) {
 }
 
 type Core struct {
-	IP        string
-	ClientID  int64
-	WaitTime  int
-	Enabled   bool
-	Autostart bool
+	IP            string
+	ClientID      int64
+	WaitTime      int
+	Enabled       bool
+	RecordHistory bool
+	Autostart     bool
 }
 
 type DevApp struct {
@@ -123,7 +124,7 @@ func Load() (*Config, bool, error) {
 	fallbackDevapps := cfg.Devapps
 	cfg.Devapps = nil
 	cfg.applyCore(coreTable(root))
-	cfg.applyRpc(tableField(root, "rpc"))
+	cfg.applyActivity(activityTable(root))
 	cfg.applyBot(tableField(root, "bot"))
 	cfg.applyCache(tableField(root, "cache"))
 	cfg.applyDev(tableField(root, "dev"))
@@ -163,6 +164,13 @@ func coreTable(root *lua.LTable) *lua.LTable {
 	return tableField(root, "var")
 }
 
+func activityTable(root *lua.LTable) *lua.LTable {
+	if t := tableField(root, "activity"); t != nil {
+		return t
+	}
+	return tableField(root, "rpc")
+}
+
 func (c *Config) applyCore(t *lua.LTable) {
 	if t == nil {
 		return
@@ -172,14 +180,19 @@ func (c *Config) applyCore(t *lua.LTable) {
 	v.Autostart = luaBool(t, "autostart", v.Autostart)
 }
 
-func (c *Config) applyRpc(t *lua.LTable) {
+func (c *Config) applyActivity(t *lua.LTable) {
 	if t == nil {
 		return
 	}
 	v := &c.Core
 	v.ClientID = luaInt64(t, "client_id", v.ClientID)
 	v.WaitTime = luaInt(t, "wait_time", v.WaitTime)
-	v.Enabled = luaBool(t, "enabled", v.Enabled)
+	if t.RawGetString("rpc") != lua.LNil {
+		v.Enabled = luaBool(t, "rpc", v.Enabled)
+	} else {
+		v.Enabled = luaBool(t, "enabled", v.Enabled)
+	}
+	v.RecordHistory = luaBool(t, "record_history", v.RecordHistory)
 }
 
 func (c *Config) applyBot(t *lua.LTable) {
@@ -246,6 +259,7 @@ func (c *Config) migrate() error {
 		}
 	}
 	_ = os.Remove(filepath.Join(Dir, "var.lua"))
+	_ = os.Remove(filepath.Join(Dir, "rpc.lua"))
 	return nil
 }
 
@@ -270,12 +284,12 @@ func writeFileAtomic(path string, data []byte) error {
 
 func (c *Config) files() map[string]string {
 	return map[string]string{
-		Path:       c.renderMain(),
-		RpcPath:    c.renderRpc(),
-		BotPath:    c.renderBot(),
-		CachePath:  c.renderCache(),
-		DevPath:    c.renderDev(),
-		MappedPath: c.renderMapped(),
+		Path:         c.renderMain(),
+		ActivityPath: c.renderActivity(),
+		BotPath:      c.renderBot(),
+		CachePath:    c.renderCache(),
+		DevPath:      c.renderDev(),
+		MappedPath:   c.renderMapped(),
 	}
 }
 
@@ -286,7 +300,7 @@ func (c *Config) renderMain() string {
 	fmt.Fprintf(&b, "        ip = %s,\n", luaString(c.Core.IP))
 	fmt.Fprintf(&b, "        autostart = %t,\n", c.Core.Autostart)
 	b.WriteString("    },\n")
-	b.WriteString("    rpc = require(\"rpc\"),\n")
+	b.WriteString("    activity = require(\"activity\"),\n")
 	b.WriteString("    bot = require(\"bot\"),\n")
 	b.WriteString("    cache = require(\"cache\"),\n")
 	b.WriteString("    dev = require(\"dev\"),\n")
@@ -295,12 +309,13 @@ func (c *Config) renderMain() string {
 	return b.String()
 }
 
-func (c *Config) renderRpc() string {
+func (c *Config) renderActivity() string {
 	var b strings.Builder
 	b.WriteString("return {\n")
+	fmt.Fprintf(&b, "    rpc = %t,\n", c.Core.Enabled)
 	fmt.Fprintf(&b, "    client_id = %q,\n", strconv.FormatInt(c.Core.ClientID, 10))
 	fmt.Fprintf(&b, "    wait_time = %d,\n", c.Core.WaitTime)
-	fmt.Fprintf(&b, "    enabled = %t,\n", c.Core.Enabled)
+	fmt.Fprintf(&b, "    record_history = %t,\n", c.Core.RecordHistory)
 	b.WriteString("}\n")
 	return b.String()
 }
@@ -436,7 +451,7 @@ func (c *Config) Equal(o *Config) bool {
 
 func Fingerprint() string {
 	h := sha256.New()
-	for _, p := range []string{Path, RpcPath, BotPath, CachePath, DevPath, MappedPath} {
+	for _, p := range []string{Path, ActivityPath, BotPath, CachePath, DevPath, MappedPath} {
 		fmt.Fprintf(h, "%s:", p)
 		raw, err := os.ReadFile(p)
 		if err != nil {

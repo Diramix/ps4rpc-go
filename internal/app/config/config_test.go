@@ -10,7 +10,7 @@ func TestRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	SetDir(dir)
 
-	if err := os.WriteFile(RpcPath, []byte(`return {
+	if err := os.WriteFile(ActivityPath, []byte(`return {
     client_id = "858345055966461973",
     wait_time = 15,
 }
@@ -31,7 +31,7 @@ func TestRoundTrip(t *testing.T) {
 	}
 	if err := os.WriteFile(Path, []byte(`return {
     var = { ip = "192.168.31.114" },
-    rpc = require("rpc"),
+    activity = require("activity"),
     bot = require("bot"),
     dev = require("dev"),
     mapped = require("mapped"),
@@ -75,13 +75,13 @@ func TestToggleDefaultsAndRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write(RpcPath, "return { wait_time = 10 }\n")
+	write(ActivityPath, "return { wait_time = 10 }\n")
 	write(BotPath, "return {}\n")
 	write(DevPath, `return { { devid = "1", titleid = "CUSA1" } }`+"\n")
 	write(MappedPath, "return {}\n")
 	write(Path, `return {
     var = { ip = "10.0.0.5" },
-    rpc = require("rpc"),
+    activity = require("activity"),
     bot = require("bot"),
     dev = require("dev"),
     mapped = require("mapped"),
@@ -102,13 +102,13 @@ func TestToggleDefaultsAndRoundTrip(t *testing.T) {
 		t.Errorf("dev app parsed wrong: %+v", cfg.Devapps)
 	}
 
-	rpcFile, err := os.ReadFile(RpcPath)
+	activityFile, err := os.ReadFile(ActivityPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"enabled ="} {
-		if !strings.Contains(string(rpcFile), key) {
-			t.Errorf("migrated rpc.lua missing %q\n%s", key, rpcFile)
+	for _, key := range []string{"rpc ="} {
+		if !strings.Contains(string(activityFile), key) {
+			t.Errorf("migrated activity.lua missing %q\n%s", key, activityFile)
 		}
 	}
 
@@ -131,7 +131,7 @@ func TestMigrateAddsMissingFiles(t *testing.T) {
 	dir := t.TempDir()
 	SetDir(dir)
 
-	if err := os.WriteFile(RpcPath, []byte(`return {
+	if err := os.WriteFile(ActivityPath, []byte(`return {
     wait_time = 42,
 }
 `), 0o644); err != nil {
@@ -139,7 +139,7 @@ func TestMigrateAddsMissingFiles(t *testing.T) {
 	}
 	if err := os.WriteFile(Path, []byte(`return {
     var = { ip = "10.0.0.5" },
-    rpc = require("rpc"),
+    activity = require("activity"),
     bot = require("bot"),
     dev = require("dev"),
     mapped = require("mapped"),

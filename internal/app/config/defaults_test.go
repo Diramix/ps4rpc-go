@@ -12,7 +12,7 @@ func TestDefaultsParse(t *testing.T) {
 		t.Fatalf("embedded defaults are broken: %v", err)
 	}
 	if cfg.Core.ClientID == 0 || cfg.Core.WaitTime <= 0 {
-		t.Fatalf("defaults/rpc.lua did not reach the config: %+v", cfg.Core)
+		t.Fatalf("defaults/activity.lua did not reach the config: %+v", cfg.Core)
 	}
 	if !cfg.Core.Enabled || !cfg.Core.Autostart {
 		t.Fatalf("presence and autostart should ship enabled: %+v", cfg.Core)
@@ -34,12 +34,12 @@ func TestDefaultsParse(t *testing.T) {
 func TestDefaultsMatchWhatTheProgramRenders(t *testing.T) {
 	cfg := Default()
 	rendered := map[string]string{
-		"main.lua":   cfg.renderMain(),
-		"rpc.lua":    cfg.renderRpc(),
-		"bot.lua":    cfg.renderBot(),
-		"cache.lua":  cfg.renderCache(),
-		"dev.lua":    cfg.renderDev(),
-		"mapped.lua": cfg.renderMapped(),
+		"main.lua":     cfg.renderMain(),
+		"activity.lua": cfg.renderActivity(),
+		"bot.lua":      cfg.renderBot(),
+		"cache.lua":    cfg.renderCache(),
+		"dev.lua":      cfg.renderDev(),
+		"mapped.lua":   cfg.renderMapped(),
 	}
 	for name, want := range rendered {
 		got, err := defaults.ReadFile("defaults/" + name)
@@ -63,7 +63,7 @@ func TestFirstRunWritesTheDefaults(t *testing.T) {
 	if err := cfg.Save(); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"main.lua", "rpc.lua", "bot.lua", "dev.lua", "mapped.lua"} {
+	for _, name := range []string{"main.lua", "activity.lua", "bot.lua", "dev.lua", "mapped.lua"} {
 		if _, err := os.Stat(filepath.Join(Dir, name)); err != nil {
 			t.Errorf("%s not written: %v", name, err)
 		}

@@ -107,7 +107,7 @@ func TestToggleIsSavedImmediately(t *testing.T) {
 	defer m.Shutdown()
 	m.tabIdx = tabSettings
 
-	focusField(t, m, "RPC enabled")
+	focusField(t, m, "Rich Presence")
 	send(m, " ")
 	if m.cfg.Core.Enabled {
 		t.Error("toggle did not flip the value")

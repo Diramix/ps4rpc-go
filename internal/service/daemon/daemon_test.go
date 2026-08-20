@@ -25,8 +25,13 @@ func TestWantedFollowsTheConfig(t *testing.T) {
 	cfg.Core.IP = "10.0.0.2"
 	cfg.Core.Enabled = false
 	cfg.Bot.Token = ""
+	if !Wanted(cfg, RolePresence) {
+		t.Error("presence should still be wanted while recording history")
+	}
+
+	cfg.Core.RecordHistory = false
 	if Wanted(cfg, RolePresence) {
-		t.Error("presence should not be wanted when disabled")
+		t.Error("presence should not be wanted with both RPC and history off")
 	}
 	if Wanted(cfg, RoleBot) {
 		t.Error("bot should not be wanted without a token")
