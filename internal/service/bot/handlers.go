@@ -9,6 +9,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"ps4rpc/internal/service/history"
 	"ps4rpc/internal/source/ps4"
 )
 
@@ -65,6 +66,15 @@ func optString(opts []*discordgo.ApplicationCommandInteractionDataOption, name s
 	return ""
 }
 
+func optInt(opts []*discordgo.ApplicationCommandInteractionDataOption, name string) int64 {
+	for _, o := range opts {
+		if o.Name == name {
+			return o.IntValue()
+		}
+	}
+	return 0
+}
+
 func (b *Bot) defer_(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
@@ -117,6 +127,8 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 		b.cmdShot(s, i)
 	case "trophy":
 		b.cmdTrophy(s, i, data.Options)
+	case "history":
+		b.cmdHistory(s, i, data.Options)
 	}
 }
 
@@ -233,6 +245,42 @@ func (b *Bot) cmdTrophy(s *discordgo.Session, i *discordgo.InteractionCreate, op
 	}
 	icon, _ := b.iconForName(title.Name)
 	b.edit(s, i, trophyEmbed(title, trophies, filter, 0, icon, meta.Merge(trophyMeta)))
+}
+
+func (b *Bot) cmdHistory(s *discordgo.Session, i *discordgo.InteractionCreate, opts []*discordgo.ApplicationCommandInteractionDataOption) {
+	b.defer_(s, i)
+	game := optString(opts, "game")
+	count := int(optInt(opts, "count"))
+	order := optString(opts, "order")
+
+	sessions, err := history.Load(b.ip)
+	if err != nil {
+		b.fail(s, i, "console unreachable: "+err.Error())
+		return
+	}
+	matched := filterHistoryByGame(sessions, game)
+	if len(matched) == 0 {
+		b.fail(s, i, "no session history found for: "+game)
+		return
+	}
+	b.edit(s, i, historyEmbed(matched, game, order, count))
+}
+
+func filterHistoryByGame(sessions []history.Session, name string) []history.Session {
+	want := strings.ToLower(strings.TrimSpace(name))
+	var exact, partial []history.Session
+	for _, sess := range sessions {
+		switch {
+		case strings.EqualFold(sess.GameName, name) || sess.TitleID == name:
+			exact = append(exact, sess)
+		case strings.Contains(strings.ToLower(sess.GameName), want):
+			partial = append(partial, sess)
+		}
+	}
+	if len(exact) > 0 {
+		return exact
+	}
+	return partial
 }
 
 func (b *Bot) handleAutocomplete(s *discordgo.Session, i *discordgo.InteractionCreate) {

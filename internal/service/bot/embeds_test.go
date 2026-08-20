@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"ps4rpc/internal/service/history"
 	"ps4rpc/internal/source/ps4"
 )
 
@@ -48,6 +49,47 @@ func TestTrophyEmbed(t *testing.T) {
 	}
 	if !strings.Contains(r.embed.Description, "✅") || !strings.Contains(r.embed.Description, "🔒") {
 		t.Errorf("missing unlock marks: %q", r.embed.Description)
+	}
+}
+
+func sampleHistory() []history.Session {
+	base := time.Now()
+	return []history.Session{
+		{TitleID: "CUSA00512", GameName: "Beyond: Two Souls™", Start: base.Add(-3 * time.Hour), End: base.Add(-2 * time.Hour)},
+		{TitleID: "CUSA00512", GameName: "Beyond: Two Souls™", Start: base.Add(-30 * time.Minute)},
+		{TitleID: "CUSA01113", GameName: "Gravity Rush™ Remastered", Start: base.Add(-time.Hour), End: base.Add(-50 * time.Minute)},
+	}
+}
+
+func TestFilterHistoryByGame(t *testing.T) {
+	sessions := sampleHistory()
+	got := filterHistoryByGame(sessions, "Beyond: Two Souls™")
+	if len(got) != 2 {
+		t.Fatalf("exact match = %+v", got)
+	}
+	got = filterHistoryByGame(sessions, "gravity")
+	if len(got) != 1 || got[0].TitleID != "CUSA01113" {
+		t.Fatalf("partial match = %+v", got)
+	}
+	if got := filterHistoryByGame(sessions, "no such game"); len(got) != 0 {
+		t.Fatalf("unexpected match = %+v", got)
+	}
+}
+
+func TestHistoryEmbedOrderAndCount(t *testing.T) {
+	sessions := filterHistoryByGame(sampleHistory(), "Beyond: Two Souls™")
+
+	newest := historyEmbed(sessions, "Beyond: Two Souls™", "newest", 10)
+	if !strings.Contains(newest.embed.Footer.Text, "2 session") {
+		t.Errorf("footer = %q", newest.embed.Footer.Text)
+	}
+
+	oldestOne := historyEmbed(sessions, "Beyond: Two Souls™", "oldest", 1)
+	if !strings.Contains(oldestOne.embed.Footer.Text, "1 session") {
+		t.Errorf("count not applied: %q", oldestOne.embed.Footer.Text)
+	}
+	if !strings.Contains(oldestOne.embed.Description, "Beyond") {
+		t.Errorf("missing game name: %q", oldestOne.embed.Description)
 	}
 }
 

@@ -23,6 +23,11 @@ func commandDefs() []*discordgo.ApplicationCommand {
 		{Name: "Unlocked", Value: "unlocked"},
 		{Name: "Locked", Value: "locked"},
 	}
+	historyOrderChoices := []*discordgo.ApplicationCommandOptionChoice{
+		{Name: "Oldest first", Value: "oldest"},
+		{Name: "Newest first", Value: "newest"},
+	}
+	minCount := 1.0
 
 	cmd := func(name, desc string, opts ...*discordgo.ApplicationCommandOption) *discordgo.ApplicationCommand {
 		return &discordgo.ApplicationCommand{
@@ -45,5 +50,9 @@ func commandDefs() []*discordgo.ApplicationCommand {
 		cmd("trophy", "Trophies for a chosen game",
 			&discordgo.ApplicationCommandOption{Type: discordgo.ApplicationCommandOptionString, Name: "game", Description: "Game name", Required: true, Autocomplete: true},
 			&discordgo.ApplicationCommandOption{Type: discordgo.ApplicationCommandOptionString, Name: "filter", Description: "Trophy filter", Choices: filterChoices}),
+		cmd("history", "Session history for a game",
+			&discordgo.ApplicationCommandOption{Type: discordgo.ApplicationCommandOptionString, Name: "game", Description: "Game name", Required: true, Autocomplete: true},
+			&discordgo.ApplicationCommandOption{Type: discordgo.ApplicationCommandOptionInteger, Name: "count", Description: "How many sessions to show", Required: true, MinValue: &minCount, MaxValue: 25},
+			&discordgo.ApplicationCommandOption{Type: discordgo.ApplicationCommandOptionString, Name: "order", Description: "Oldest or newest first", Required: true, Choices: historyOrderChoices}),
 	}
 }

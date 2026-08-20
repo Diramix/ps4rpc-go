@@ -9,6 +9,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"ps4rpc/internal/service/history"
 	"ps4rpc/internal/source/ps4"
 )
 
@@ -279,6 +280,39 @@ func trophyEmbed(title ps4.TrophyTitle, all []ps4.Trophy, filter string, page in
 	prev := fmt.Sprintf("trp:%s:%s:%d", title.CommID, orAll(filter), page-1)
 	next := fmt.Sprintf("trp:%s:%s:%d", title.CommID, orAll(filter), page+1)
 	return rendered{embed: e, files: files, components: pageRow(prev, next, page, pages)}
+}
+
+func historyEmbed(sessions []history.Session, game, order string, count int) rendered {
+	sorted := append([]history.Session(nil), sessions...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if order == "oldest" {
+			return sorted[i].Start.Before(sorted[j].Start)
+		}
+		return sorted[i].Start.After(sorted[j].Start)
+	})
+	if count > 0 && count < len(sorted) {
+		sorted = sorted[:count]
+	}
+
+	var sb strings.Builder
+	for _, sess := range sorted {
+		status := humanDuration(sess.Duration())
+		if sess.Open() {
+			status += " (ongoing)"
+		}
+		fmt.Fprintf(&sb, "**%s**\n%s · %s\n\n", sess.GameName, discordDate(sess.Start), status)
+	}
+	if sb.Len() == 0 {
+		sb.WriteString("no data")
+	}
+
+	e := &discordgo.MessageEmbed{
+		Title:       "🕓 Session history · " + game,
+		Description: sb.String(),
+		Color:       colorPS4,
+		Footer:      &discordgo.MessageEmbedFooter{Text: fmt.Sprintf("%d session(s)", len(sorted))},
+	}
+	return rendered{embed: e}
 }
 
 func orAll(s string) string {
